@@ -1,0 +1,2216 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>สื่อการเรียนรู้และแบบทดสอบออนไลน์ (Kahoot Style)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts: Kanit & Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Kanit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Tone.js for Sound Effects -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <!-- Canvas Confetti for Celebration -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+    <style>
+        body {
+            font-family: 'Kanit', 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            overflow-x: hidden;
+        }
+
+        /* Kahoot-style vibrant geometric background */
+        .bg-kahoot-pattern {
+            background-color: #46178f;
+            background-image: 
+                radial-gradient(circle at 15% 20%, rgba(255, 255, 255, 0.08) 0%, transparent 25%),
+                radial-gradient(circle at 85% 80%, rgba(255, 255, 255, 0.08) 0%, transparent 30%),
+                linear-gradient(135deg, #46178f 0%, #25076b 100%);
+        }
+
+        /* Answer Button 3D Push Effect */
+        .kahoot-btn {
+            transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 6px 0 rgba(0, 0, 0, 0.25);
+        }
+        .kahoot-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            filter: brightness(1.05);
+        }
+        .kahoot-btn:active:not(:disabled) {
+            transform: translateY(4px);
+            box-shadow: 0 2px 0 rgba(0, 0, 0, 0.25);
+        }
+        .kahoot-btn:disabled {
+            cursor: not-allowed;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #c4b5fd;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #8b5cf6;
+        }
+
+        /* Pulse animation for timer */
+        @keyframes pulse-fast {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.12); }
+        }
+        .timer-urgent {
+            animation: pulse-fast 0.6s infinite;
+            background-color: #e21b3c !important;
+            color: white !important;
+        }
+
+        /* Fade transitions */
+        .fade-in {
+            animation: fadeIn 0.35s ease-out forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col text-gray-800 select-none">
+
+    <!-- Custom Notification Toast / Modal (No alert() used) -->
+    <div id="toast-container" class="fixed top-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- Custom Confirmation Modal -->
+    <div id="confirm-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl transform transition-all scale-95 opacity-0" id="confirm-modal-box">
+            <div class="flex items-center gap-3 text-amber-500 mb-3">
+                <i class="fa-solid fa-circle-exclamation text-3xl"></i>
+                <h3 class="text-xl font-bold text-gray-900" id="confirm-title">ยืนยันการทำรายการ</h3>
+            </div>
+            <p class="text-gray-600 mb-6" id="confirm-message">คุณแน่ใจหรือไม่?</p>
+            <div class="flex justify-end gap-3">
+                <button id="confirm-cancel-btn" class="px-5 py-2.5 rounded-xl font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 transition">ยกเลิก</button>
+                <button id="confirm-ok-btn" class="px-5 py-2.5 rounded-xl font-semibold text-white bg-purple-700 hover:bg-purple-800 transition shadow-md">ยืนยัน</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Instructor Password Modal -->
+    <div id="instructor-auth-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-sm w-full p-6 sm:p-7 shadow-2xl transform transition-all scale-95 opacity-0" id="instructor-auth-box">
+            <div class="flex items-center gap-3 text-purple-700 mb-3">
+                <div class="w-11 h-11 rounded-2xl bg-purple-100 flex items-center justify-center shrink-0">
+                    <i class="fa-solid fa-lock text-xl"></i>
+                </div>
+                <div>
+                    <h3 class="text-lg font-extrabold text-gray-900">เข้าสู่ระบบโหมดผู้สอน</h3>
+                    <p class="text-xs text-gray-500">กรุณากรอกรหัสผ่านเพื่อแก้ไขข้อสอบ</p>
+                </div>
+            </div>
+            <form onsubmit="verifyInstructorPassword(event)" class="space-y-4 mt-4">
+                <div>
+                    <input type="password" id="instructor-password-input" required placeholder="กรอกรหัสผ่านผู้สอน..." 
+                        class="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-purple-600 focus:outline-none text-base font-semibold transition">
+                </div>
+                <div class="flex justify-end gap-2 pt-1">
+                    <button type="button" onclick="closeInstructorAuthModal()" class="px-4 py-2.5 rounded-xl font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 transition text-sm">ยกเลิก</button>
+                    <button type="submit" class="px-5 py-2.5 rounded-xl font-bold text-white bg-purple-700 hover:bg-purple-800 transition shadow-md text-sm">
+                        <i class="fa-solid fa-right-to-bracket mr-1"></i> เข้าสู่ระบบ
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Top Navigation Bar -->
+    <header class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <!-- Brand Logo: GHPs with Cute Cartoon Mascot -->
+            <div class="flex items-center gap-3 cursor-pointer group" onclick="switchView('home')">
+                <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-300 via-orange-400 to-pink-500 flex items-center justify-center shadow-md group-hover:scale-105 transition-transform p-1">
+                    <!-- Cute Cartoon Owl/Bear Mascot SVG -->
+                    <svg viewBox="0 0 100 100" class="w-full h-full drop-shadow-sm" xmlns="http://www.w3.org/2000/svg">
+                        <!-- Ears -->
+                        <circle cx="24" cy="26" r="13" fill="#fffbeb"/>
+                        <circle cx="76" cy="26" r="13" fill="#fffbeb"/>
+                        <circle cx="24" cy="26" r="7" fill="#fbcfe8"/>
+                        <circle cx="76" cy="26" r="7" fill="#fbcfe8"/>
+                        <!-- Head -->
+                        <circle cx="50" cy="54" r="36" fill="#ffffff"/>
+                        <!-- Cute Graduation Cap / Crown Accent -->
+                        <polygon points="50,8 26,20 50,30 74,20" fill="#6d28d9"/>
+                        <rect x="40" y="24" width="20" height="6" rx="2" fill="#5b21b6"/>
+                        <line x1="72" y1="20" x2="76" y2="33" stroke="#f59e0b" stroke-width="3" stroke-linecap="round"/>
+                        <circle cx="76" cy="34" r="3" fill="#f59e0b"/>
+                        <!-- Eyes -->
+                        <circle cx="37" cy="51" r="6.5" fill="#1e1b4b"/>
+                        <circle cx="63" cy="51" r="6.5" fill="#1e1b4b"/>
+                        <!-- Eye Sparkles -->
+                        <circle cx="39" cy="49" r="2.2" fill="#ffffff"/>
+                        <circle cx="65" cy="49" r="2.2" fill="#ffffff"/>
+                        <!-- Rosy Cheeks -->
+                        <ellipse cx="26" cy="60" rx="6" ry="3.8" fill="#f472b6" opacity="0.65"/>
+                        <ellipse cx="74" cy="60" rx="6" ry="3.8" fill="#f472b6" opacity="0.65"/>
+                        <!-- Nose & Happy Smile -->
+                        <ellipse cx="50" cy="58" rx="4.5" ry="3" fill="#f59e0b"/>
+                        <path d="M 43 64 Q 50 71 57 64" stroke="#1e1b4b" stroke-width="3" fill="none" stroke-linecap="round"/>
+                    </svg>
+                </div>
+                <div>
+                    <span class="font-extrabold text-2xl tracking-tight text-purple-900">GHP<span class="text-pink-600">s</span></span>
+                    <span class="hidden sm:inline-block text-xs bg-purple-100 text-purple-800 font-semibold px-2.5 py-0.5 rounded-full ml-2">Interactive Learning</span>
+                </div>
+            </div>
+
+            <!-- Navigation Actions -->
+            <div class="flex items-center gap-2 sm:gap-3">
+                <button onclick="toggleSound()" id="sound-toggle-btn" class="p-2.5 rounded-xl text-gray-600 hover:bg-gray-100 transition" title="เปิด/ปิดเสียงเอฟเฟกต์">
+                    <i class="fa-solid fa-volume-high text-lg text-purple-700"></i>
+                </button>
+                <button onclick="switchView('home')" class="px-3 sm:px-4 py-2 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-100 transition flex items-center gap-2">
+                    <i class="fa-solid fa-house"></i>
+                    <span class="hidden sm:inline">หน้าหลัก</span>
+                </button>
+                <button onclick="switchView('creator')" class="px-3 sm:px-4 py-2 rounded-xl text-sm font-semibold text-white bg-purple-700 hover:bg-purple-800 transition shadow-sm flex items-center gap-2">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    <span>โหมดผู้สอน (สร้างข้อสอบ)</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN CONTENT AREA -->
+    <main class="flex-grow flex flex-col">
+
+        <!-- ========================================================= -->
+        <!-- VIEW 1: HOME / PLAYER REGISTRATION & QUIZ SELECTION       -->
+        <!-- ========================================================= -->
+        <section id="view-home" class="flex-grow bg-kahoot-pattern flex items-center justify-center p-4 sm:p-8">
+            <div class="max-w-5xl w-full grid grid-cols-1 lg:grid-cols-12 gap-8 items-center fade-in">
+                
+                <!-- Left Column: Welcome & Player Info Form -->
+                <div class="lg:col-span-6 bg-white rounded-3xl p-6 sm:p-8 shadow-2xl">
+                    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-100 text-purple-800 text-xs font-bold mb-4">
+                        <i class="fa-solid fa-graduation-cap"></i> ระบบทดสอบและสื่อการเรียนรู้
+                    </div>
+                    <h1 class="text-2xl sm:text-3xl font-extrabold text-gray-900 mb-2">ลงทะเบียนเข้าทำแบบทดสอบ</h1>
+                    <p class="text-gray-500 text-sm mb-6">กรุณากรอกข้อมูล ชื่อ-นามสกุล และแผนกของคุณก่อนเริ่มทำแบบทดสอบ</p>
+
+                    <form id="player-start-form" onsubmit="handleStartQuiz(event)" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-1.5">
+                                <i class="fa-solid fa-user text-purple-600 mr-1"></i> ชื่อ - นามสกุล <span class="text-red-500">*</span>
+                            </label>
+                            <input type="text" id="player-name" required placeholder="เช่น นายสมชาย ใจดี" 
+                                class="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-purple-600 focus:outline-none text-base font-medium transition">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-1.5">
+                                <i class="fa-solid fa-building text-purple-600 mr-1"></i> แผนก / ฝ่าย / ชั้นเรียน <span class="text-red-500">*</span>
+                            </label>
+                            <input type="text" id="player-dept" required placeholder="เช่น แผนกไอที / ฝ่ายขาย / ม.6/1" 
+                                class="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-purple-600 focus:outline-none text-base font-medium transition">
+                        </div>
+
+                        <div class="pt-2">
+                            <button type="submit" class="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-extrabold text-lg shadow-lg kahoot-btn flex items-center justify-center gap-3">
+                                <span>เริ่มทำแบบทดสอบเลย!</span>
+                                <i class="fa-solid fa-play"></i>
+                            </button>
+                        </div>
+                    </form>
+
+                    <!-- Quick Stats / Leaderboard Shortcut -->
+                    <div class="mt-6 pt-5 border-t border-gray-100 flex items-center justify-between text-sm">
+                        <span class="text-gray-500">มีผู้ทำแบบทดสอบแล้ว: <strong id="total-players-count" class="text-purple-700">0</strong> คน</span>
+                        <button onclick="switchView('leaderboard')" class="text-purple-700 font-bold hover:underline flex items-center gap-1">
+                            <i class="fa-solid fa-trophy text-amber-500"></i> ดูตารางคะแนนรวม
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Right Column: Active Quiz Preview Card -->
+                <div class="lg:col-span-6 text-white space-y-6">
+                    <div class="bg-white/10 backdrop-blur-md border border-white/20 rounded-3xl p-6 sm:p-8 shadow-xl">
+                        <div class="flex items-center justify-between mb-4">
+                            <span class="px-3 py-1 rounded-full bg-amber-400 text-purple-950 text-xs font-extrabold uppercase tracking-wider">
+                                ชุดแบบทดสอบปัจจุบัน
+                            </span>
+                            <div class="flex items-center gap-2">
+                                <button type="button" onclick="fetchQuizFromGoogleSheets(true)" id="home-sync-btn" class="text-xs font-bold bg-white/20 hover:bg-white/30 text-white px-3 py-1 rounded-full transition flex items-center gap-1.5" title="ดึงข้อสอบล่าสุดจาก Google Sheets">
+                                    <i class="fa-solid fa-cloud-arrow-down"></i>
+                                    <span>อัปเดตข้อสอบ</span>
+                                </button>
+                                <span class="text-sm font-semibold bg-black/30 px-3 py-1 rounded-full">
+                                    <i class="fa-solid fa-list-ol mr-1"></i> <span id="home-question-count">0</span> ข้อ
+                                </span>
+                            </div>
+                        </div>
+
+                        <h2 id="home-quiz-title" class="text-2xl sm:text-3xl font-extrabold mb-3 leading-snug">
+                            กำลังโหลดชื่อแบบทดสอบ...
+                        </h2>
+                        <p id="home-quiz-desc" class="text-purple-100 text-sm sm:text-base mb-6 leading-relaxed">
+                            คำอธิบายแบบทดสอบ
+                        </p>
+
+                        <!-- Media Features Badge -->
+                        <div class="grid grid-cols-3 gap-3 text-center">
+                            <div class="bg-white/10 rounded-2xl p-3 border border-white/10">
+                                <i class="fa-solid fa-stopwatch text-2xl text-amber-300 mb-1"></i>
+                                <div class="text-xs font-semibold">จับเวลาทุกข้อ</div>
+                            </div>
+                            <div class="bg-white/10 rounded-2xl p-3 border border-white/10">
+                                <i class="fa-solid fa-photo-film text-2xl text-pink-300 mb-1"></i>
+                                <div class="text-xs font-semibold">ภาพ & วิดีโอ</div>
+                            </div>
+                            <div class="bg-white/10 rounded-2xl p-3 border border-white/10">
+                                <i class="fa-solid fa-lightbulb text-2xl text-emerald-300 mb-1"></i>
+                                <div class="text-xs font-semibold">เฉลยพร้อมอธิบาย</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Instructor Tip -->
+                    <div class="bg-purple-950/50 border border-purple-400/20 rounded-2xl p-4 flex items-center justify-between gap-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-pink-600 flex items-center justify-center shrink-0">
+                                <i class="fa-solid fa-chalkboard-user text-white"></i>
+                            </div>
+                            <div class="text-xs sm:text-sm">
+                                <p class="font-bold text-white">คุณเป็นผู้สอนใช่หรือไม่?</p>
+                                <p class="text-purple-200">เพิ่มคำถาม ใส่รูปภาพ วิดีโอ YouTube หรืออัปโหลดไฟล์ได้</p>
+                            </div>
+                        </div>
+                        <button onclick="switchView('creator')" class="shrink-0 px-4 py-2 rounded-xl bg-white text-purple-900 font-bold text-xs sm:text-sm hover:bg-purple-100 transition">
+                            แก้ไขข้อสอบ
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- ========================================================= -->
+        <!-- VIEW 2: INSTRUCTOR CREATOR STUDIO                         -->
+        <!-- ========================================================= -->
+        <section id="view-creator" class="hidden flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 fade-in">
+            <!-- Top Header & Quiz Settings -->
+            <div class="bg-white rounded-3xl p-6 shadow-sm border border-gray-200 mb-6">
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-gray-100">
+                    <div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <h1 class="text-2xl font-extrabold text-gray-900 flex items-center gap-2">
+                                <i class="fa-solid fa-wand-magic-sparkles text-purple-600"></i>
+                                สตูดิโอสร้างสื่อการเรียนรู้และแบบทดสอบ
+                            </h1>
+                            <span id="autosave-badge" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold">
+                                <i class="fa-solid fa-cloud-check"></i> บันทึกอัตโนมัติในเครื่องแล้ว
+                            </span>
+                        </div>
+                        <p class="text-sm text-gray-500 mt-1">ทุกการแก้ไขจะถูกบันทึกอัตโนมัติ เปิดครั้งถัดไปใช้งานต่อได้ทันทีโดยไม่ต้องสร้างใหม่</p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button onclick="resetToSampleQuiz()" class="px-4 py-2.5 rounded-xl text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 transition">
+                            <i class="fa-solid fa-rotate-left mr-1"></i> โหลดตัวอย่างเริ่มต้น
+                        </button>
+                        <button onclick="exportQuizJSON()" class="px-4 py-2.5 rounded-xl text-sm font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 transition" title="ส่งออกไฟล์ไว้แชร์ไปเครื่องอื่น">
+                            <i class="fa-solid fa-download mr-1"></i> ส่งออกไฟล์ (.json)
+                        </button>
+                        <label class="px-4 py-2.5 rounded-xl text-sm font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition cursor-pointer">
+                            <i class="fa-solid fa-upload mr-1"></i> นำเข้าไฟล์
+                            <input type="file" accept=".json" onchange="importQuizJSON(event)" class="hidden">
+                        </label>
+                        <button onclick="saveAndGoHome()" class="px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm transition">
+                            <i class="fa-solid fa-check mr-1"></i> บันทึกและไปหน้าทำแบบทดสอบ
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Quiz Title & Description Inputs -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-5">
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">ชื่อหัวข้อแบบทดสอบ / บทเรียน</label>
+                        <input type="text" id="creator-quiz-title" oninput="updateQuizMeta()" 
+                            class="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-purple-600 focus:outline-none font-bold text-gray-800">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">คำอธิบายสั้นๆ สำหรับผู้เรียน</label>
+                        <input type="text" id="creator-quiz-desc" oninput="updateQuizMeta()" 
+                            class="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-purple-600 focus:outline-none text-gray-700">
+                    </div>
+                </div>
+
+                <!-- Google Sheets Webhook URL Integration (Editable by Instructor) -->
+                <div class="mt-4 pt-4 border-t border-gray-100 bg-emerald-50/70 p-4 rounded-2xl border border-emerald-200 space-y-3">
+                    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                        <div class="flex items-center gap-3">
+                            <div class="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                                <i class="fa-solid fa-cloud-arrow-up"></i>
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-gray-900 text-sm sm:text-base flex flex-wrap items-center gap-2">
+                                    ตั้งค่าที่เก็บข้อมูล Google Sheets (Web App URL)
+                                    <span id="gsheet-status-badge" class="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-600 text-white">เชื่อมต่อแล้ว</span>
+                                </h4>
+                                <p class="text-xs text-gray-600">สามารถเปลี่ยนลิงก์ Apps Script เพื่อย้ายไปเก็บข้อสอบและคะแนนในไฟล์ Google Sheets อื่นได้</p>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2 shrink-0">
+                            <button type="button" onclick="saveQuizToGoogleSheets()" id="btn-push-quiz-sheet" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm transition shadow-sm flex items-center gap-1.5">
+                                <i class="fa-solid fa-cloud-arrow-up"></i>
+                                <span>บันทึกข้อสอบขึ้น Google Sheets</span>
+                            </button>
+                            <button type="button" onclick="fetchQuizFromGoogleSheets(true)" class="px-3.5 py-2 rounded-xl bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-xs sm:text-sm transition flex items-center gap-1.5">
+                                <i class="fa-solid fa-cloud-arrow-down"></i>
+                                <span>ดึงข้อสอบจาก Sheets</span>
+                            </button>
+                            <button type="button" onclick="testGoogleSheetConnection()" class="px-3 py-2 rounded-xl bg-white hover:bg-gray-100 text-gray-700 border border-gray-300 font-semibold text-xs sm:text-sm transition">
+                                <i class="fa-solid fa-paper-plane mr-1"></i> ทดสอบส่งคะแนน
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Editable Web App URL Input Bar -->
+                    <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
+                        <div class="relative flex-grow">
+                            <span class="absolute inset-y-0 left-3 flex items-center text-emerald-700">
+                                <i class="fa-solid fa-link text-xs"></i>
+                            </span>
+                            <input type="url" id="creator-gsheet-url" oninput="updateGoogleSheetUrl()" 
+                                placeholder="วางลิงก์ Google Apps Script Web App URL (https://script.google.com/macros/s/.../exec)"
+                                class="w-full pl-8 pr-3 py-2 rounded-xl border border-emerald-300 focus:border-emerald-600 focus:outline-none text-xs sm:text-sm bg-white text-gray-800 font-mono">
+                        </div>
+                        <button type="button" onclick="resetDefaultGoogleSheetUrl()" class="px-3 py-2 rounded-xl bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold text-xs transition shrink-0" title="คืนค่าลิงก์เริ่มต้น">
+                            <i class="fa-solid fa-rotate-left mr-1"></i> คืนค่าลิงก์เดิม
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Instructor Setting: Toggle Allow Answer Reveal After Quiz -->
+                <div class="mt-4 pt-4 border-t border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-purple-50/70 p-4 rounded-2xl border border-purple-100">
+                    <div class="flex items-start sm:items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0">
+                            <i class="fa-solid fa-eye"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-gray-900 text-sm sm:text-base">อนุญาตให้ผู้เรียนกดดูเฉลยหลังทำแบบทดสอบเสร็จ</h4>
+                            <p class="text-xs text-gray-600">หากปิดใช้งาน ผู้เรียนจะเห็นเฉพาะคะแนนรวมและอันดับ โดยไม่สามารถกดดูเฉลยรายข้อได้ (เหมาะสำหรับใช้สอบเก็บคะแนน)</p>
+                        </div>
+                    </div>
+                    <label class="inline-flex items-center cursor-pointer shrink-0">
+                        <input type="checkbox" id="creator-allow-review" checked onchange="updateQuizMeta()" class="sr-only peer">
+                        <div class="relative w-14 h-7 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:start-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-emerald-500"></div>
+                        <span id="creator-allow-review-label" class="ms-3 text-sm font-bold text-emerald-700">เปิดแสดงเฉลย</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Main Builder Grid: Left Question List | Right Question Editor -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                
+                <!-- Left Sidebar: Question List -->
+                <div class="lg:col-span-4 bg-white rounded-3xl p-5 shadow-sm border border-gray-200">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="font-bold text-gray-800">รายการคำถาม (<span id="creator-q-count">0</span> ข้อ)</h3>
+                        <button onclick="addNewQuestion()" class="px-3 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold transition flex items-center gap-1 shadow-sm">
+                            <i class="fa-solid fa-plus"></i> เพิ่มข้อใหม่
+                        </button>
+                    </div>
+                    
+                    <div id="creator-question-list" class="space-y-2.5 max-h-[550px] overflow-y-auto pr-1">
+                        <!-- Question cards injected by JS -->
+                    </div>
+                </div>
+
+                <!-- Right Main Panel: Active Question Editor -->
+                <div class="lg:col-span-8 bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-gray-200" id="question-editor-panel">
+                    <div class="flex items-center justify-between mb-6 pb-4 border-b border-gray-100">
+                        <span class="px-3 py-1 rounded-lg bg-purple-100 text-purple-800 font-extrabold text-sm">
+                            กำลังแก้ไขคำถามข้อที่ <span id="editor-q-number">1</span>
+                        </span>
+                        <button onclick="deleteCurrentQuestion()" class="text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-xl text-sm font-semibold transition">
+                            <i class="fa-solid fa-trash-can mr-1"></i> ลบข้อนี้
+                        </button>
+                    </div>
+
+                    <div class="space-y-6">
+                        <!-- Question Text -->
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-2">โจทย์คำถาม <span class="text-red-500">*</span></label>
+                            <textarea id="edit-q-text" rows="2" oninput="saveCurrentQuestionEdits()" placeholder="พิมพ์คำถามของคุณที่นี่..."
+                                class="w-full px-4 py-3 rounded-2xl border-2 border-gray-200 focus:border-purple-600 focus:outline-none text-lg font-semibold text-gray-800"></textarea>
+                        </div>
+
+                        <!-- Question Type, Timer & Points Settings -->
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 mb-1.5">
+                                    <i class="fa-solid fa-shapes text-pink-600 mr-1"></i> รูปแบบคำถาม
+                                </label>
+                                <select id="edit-q-type" onchange="changeQuestionType(this.value)" class="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-purple-600 focus:outline-none font-semibold bg-white">
+                                    <option value="multiple">4 ตัวเลือก (Multiple Choice)</option>
+                                    <option value="true_false">ถูก / ผิด (True / False)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 mb-1.5">
+                                    <i class="fa-solid fa-clock text-purple-600 mr-1"></i> เวลาในการตอบ (วินาที)
+                                </label>
+                                <select id="edit-q-time" onchange="saveCurrentQuestionEdits()" class="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-purple-600 focus:outline-none font-semibold bg-white">
+                                    <option value="10">10 วินาที (รวดเร็ว)</option>
+                                    <option value="20" selected>20 วินาที (มาตรฐาน)</option>
+                                    <option value="30">30 วินาที (ปานกลาง)</option>
+                                    <option value="45">45 วินาที (วิเคราะห์)</option>
+                                    <option value="60">60 วินาที (วิดีโอ/อ่านยาว)</option>
+                                    <option value="90">90 วินาที</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 mb-1.5">
+                                    <i class="fa-solid fa-star text-amber-500 mr-1"></i> คะแนนเต็มข้อนี้ (กรอกได้)
+                                </label>
+                                <div class="relative flex items-center">
+                                    <input type="number" id="edit-q-points" min="0" step="1" value="1000" oninput="saveCurrentQuestionEdits()" placeholder="เช่น 10, 100, 1000"
+                                        class="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-purple-600 focus:outline-none font-bold text-gray-800 bg-white pr-14">
+                                    <span class="absolute right-3.5 text-xs font-bold text-gray-400 pointer-events-none">คะแนน</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Media Attachment Section (Text / Image / Video) -->
+                        <div class="bg-gray-50 rounded-2xl p-4 border border-gray-200">
+                            <label class="block text-sm font-bold text-gray-700 mb-3">
+                                <i class="fa-solid fa-photo-film text-pink-600 mr-1"></i> สื่อประกอบคำถาม (ข้อความเสริม / รูปภาพ / วิดีโอ)
+                            </label>
+                            
+                            <!-- Media Type Tabs -->
+                            <div class="flex flex-wrap gap-2 mb-4">
+                                <button type="button" onclick="setMediaType('none')" id="media-tab-none" class="media-tab px-4 py-2 rounded-xl text-xs font-bold border transition">
+                                    <i class="fa-solid fa-font mr-1"></i> ข้อความอย่างเดียว
+                                </button>
+                                <button type="button" onclick="setMediaType('image')" id="media-tab-image" class="media-tab px-4 py-2 rounded-xl text-xs font-bold border transition">
+                                    <i class="fa-solid fa-image mr-1"></i> ใส่รูปภาพ (URL / อัปโหลด)
+                                </button>
+                                <button type="button" onclick="setMediaType('video')" id="media-tab-video" class="media-tab px-4 py-2 rounded-xl text-xs font-bold border transition">
+                                    <i class="fa-brands fa-youtube mr-1"></i> ใส่วิดีโอ (YouTube / MP4)
+                                </button>
+                            </div>
+
+                            <!-- Media Input Area -->
+                            <div id="media-input-container" class="hidden space-y-3">
+                                <div class="flex flex-col sm:flex-row gap-2">
+                                    <input type="text" id="edit-q-media-url" oninput="saveCurrentQuestionEdits(); updateMediaPreview();" 
+                                        placeholder="วางลิงก์รูปภาพ หรือ ลิงก์วิดีโอ YouTube ที่นี่..."
+                                        class="flex-grow px-4 py-2.5 rounded-xl border border-gray-300 focus:border-purple-600 focus:outline-none text-sm bg-white">
+                                    
+                                    <!-- File Upload Button for Image/Video -->
+                                    <label id="media-file-upload-btn" class="px-4 py-2.5 rounded-xl bg-purple-100 text-purple-800 hover:bg-purple-200 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition shrink-0">
+                                        <i class="fa-solid fa-cloud-arrow-up"></i>
+                                        <span>เลือกไฟล์จากเครื่อง</span>
+                                        <input type="file" id="media-file-input" accept="image/*,video/*" onchange="handleMediaFileUpload(event)" class="hidden">
+                                    </label>
+                                </div>
+
+                                <!-- Live Media Preview Box -->
+                                <div id="creator-media-preview" class="rounded-xl overflow-hidden bg-gray-900 flex items-center justify-center max-h-56">
+                                    <!-- Preview rendered here -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Answer Choices (Kahoot Colors: Supports 4-Choice & True/False) -->
+                        <div>
+                            <div class="flex items-center justify-between mb-2">
+                                <label class="block text-sm font-bold text-gray-700">ตัวเลือกคำตอบ (คลิกวงกลมด้านขวาเพื่อเลือกข้อที่ถูก)</label>
+                            </div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <!-- Option 0: Red Triangle (or True) -->
+                                <div id="edit-opt-box-0" class="flex items-center gap-2 p-2.5 rounded-2xl bg-[#e21b3c] text-white shadow-sm">
+                                    <div class="w-10 h-10 rounded-xl bg-black/20 flex items-center justify-center shrink-0 font-bold">
+                                        ▲
+                                    </div>
+                                    <input type="text" id="edit-opt-0" oninput="saveCurrentQuestionEdits()" placeholder="ตัวเลือกที่ 1"
+                                        class="w-full bg-transparent border-none focus:outline-none text-white placeholder-white/70 font-semibold text-sm">
+                                    <button type="button" onclick="setCorrectOption(0)" id="correct-btn-0" class="w-9 h-9 rounded-full border-2 border-white flex items-center justify-center shrink-0 transition" title="ตั้งเป็นคำตอบที่ถูกต้อง">
+                                        <i class="fa-solid fa-check text-sm"></i>
+                                    </button>
+                                </div>
+
+                                <!-- Option 1: Blue Diamond (or False) -->
+                                <div id="edit-opt-box-1" class="flex items-center gap-2 p-2.5 rounded-2xl bg-[#1368ce] text-white shadow-sm">
+                                    <div class="w-10 h-10 rounded-xl bg-black/20 flex items-center justify-center shrink-0 font-bold">
+                                        ◆
+                                    </div>
+                                    <input type="text" id="edit-opt-1" oninput="saveCurrentQuestionEdits()" placeholder="ตัวเลือกที่ 2"
+                                        class="w-full bg-transparent border-none focus:outline-none text-white placeholder-white/70 font-semibold text-sm">
+                                    <button type="button" onclick="setCorrectOption(1)" id="correct-btn-1" class="w-9 h-9 rounded-full border-2 border-white flex items-center justify-center shrink-0 transition" title="ตั้งเป็นคำตอบที่ถูกต้อง">
+                                        <i class="fa-solid fa-check text-sm"></i>
+                                    </button>
+                                </div>
+
+                                <!-- Option 2: Yellow Circle (Hidden in True/False mode) -->
+                                <div id="edit-opt-box-2" class="flex items-center gap-2 p-2.5 rounded-2xl bg-[#d89e00] text-white shadow-sm">
+                                    <div class="w-10 h-10 rounded-xl bg-black/20 flex items-center justify-center shrink-0 font-bold">
+                                        ●
+                                    </div>
+                                    <input type="text" id="edit-opt-2" oninput="saveCurrentQuestionEdits()" placeholder="ตัวเลือกที่ 3"
+                                        class="w-full bg-transparent border-none focus:outline-none text-white placeholder-white/70 font-semibold text-sm">
+                                    <button type="button" onclick="setCorrectOption(2)" id="correct-btn-2" class="w-9 h-9 rounded-full border-2 border-white flex items-center justify-center shrink-0 transition" title="ตั้งเป็นคำตอบที่ถูกต้อง">
+                                        <i class="fa-solid fa-check text-sm"></i>
+                                    </button>
+                                </div>
+
+                                <!-- Option 3: Green Square (Hidden in True/False mode) -->
+                                <div id="edit-opt-box-3" class="flex items-center gap-2 p-2.5 rounded-2xl bg-[#26890c] text-white shadow-sm">
+                                    <div class="w-10 h-10 rounded-xl bg-black/20 flex items-center justify-center shrink-0 font-bold">
+                                        ■
+                                    </div>
+                                    <input type="text" id="edit-opt-3" oninput="saveCurrentQuestionEdits()" placeholder="ตัวเลือกที่ 4"
+                                        class="w-full bg-transparent border-none focus:outline-none text-white placeholder-white/70 font-semibold text-sm">
+                                    <button type="button" onclick="setCorrectOption(3)" id="correct-btn-3" class="w-9 h-9 rounded-full border-2 border-white flex items-center justify-center shrink-0 transition" title="ตั้งเป็นคำตอบที่ถูกต้อง">
+                                        <i class="fa-solid fa-check text-sm"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Explanation / Answer Key Note -->
+                        <div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">
+                            <label class="block text-sm font-bold text-emerald-900 mb-1.5">
+                                <i class="fa-solid fa-lightbulb text-amber-500 mr-1"></i> คำอธิบายเฉลย (จะแสดงให้ผู้เรียนกดดูได้เมื่อทำแบบทดสอบเสร็จแล้ว)
+                            </label>
+                            <textarea id="edit-q-explanation" rows="2" oninput="saveCurrentQuestionEdits()" placeholder="อธิบายเหตุผลว่าทำไมคำตอบนี้ถึงถูกต้อง เพื่อเสริมความเข้าใจให้ผู้เรียน..."
+                                class="w-full px-3 py-2 rounded-xl border border-emerald-300 focus:border-emerald-600 focus:outline-none text-sm bg-white text-gray-800"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========================================================= -->
+        <!-- VIEW 3: LIVE QUIZ GAMEPLAY                                -->
+        <!-- ========================================================= -->
+        <section id="view-game" class="hidden flex-grow flex flex-col bg-gray-100">
+            
+            <!-- Top Game Status Bar -->
+            <div class="bg-white border-b border-gray-200 px-4 sm:px-8 py-3 shadow-sm">
+                <div class="max-w-6xl mx-auto flex items-center justify-between gap-4">
+                    <!-- Question Progress & Back Button -->
+                    <div class="flex items-center gap-2 sm:gap-3">
+                        <button onclick="prevQuestion()" id="game-prev-btn" class="hidden px-3 py-1.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs sm:text-sm transition flex items-center gap-1.5 shadow-sm">
+                            <i class="fa-solid fa-arrow-left"></i>
+                            <span>ข้อก่อนหน้า</span>
+                        </button>
+                        <span class="px-3.5 py-1.5 rounded-xl bg-purple-900 text-white font-extrabold text-sm sm:text-base">
+                            ข้อที่ <span id="game-q-current">1</span> / <span id="game-q-total">5</span>
+                        </span>
+                        <div class="hidden md:block text-sm">
+                            <span class="text-gray-500">ผู้ทดสอบ:</span>
+                            <strong id="game-player-badge" class="text-gray-800">สมชาย (ไอที)</strong>
+                        </div>
+                    </div>
+
+                    <!-- Countdown Timer Circle -->
+                    <div class="flex items-center gap-2">
+                        <div id="game-timer-circle" class="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-purple-700 text-white flex items-center justify-center font-extrabold text-xl sm:text-2xl shadow-md transition-colors">
+                            20
+                        </div>
+                    </div>
+
+                    <!-- Quiz Mode Status Badge (Live score hidden during test) -->
+                    <div class="flex items-center gap-3">
+                        <div class="text-right hidden sm:block">
+                            <div class="text-xs text-gray-400 font-semibold">สถานะการทดสอบ</div>
+                            <div class="text-sm font-bold text-purple-800 flex items-center justify-end gap-1.5">
+                                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                <span>กำลังทำแบบทดสอบ</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Question & Media Display Area -->
+            <div class="flex-grow max-w-5xl w-full mx-auto px-4 py-6 flex flex-col justify-between gap-6">
+                
+                <!-- Question Card -->
+                <div class="bg-white rounded-3xl p-6 sm:p-8 shadow-md border border-gray-200 text-center flex flex-col items-center justify-center min-h-[220px]">
+                    <h2 id="game-question-text" class="text-xl sm:text-3xl font-extrabold text-gray-900 leading-snug mb-4">
+                        คำถามจะปรากฏที่นี่
+                    </h2>
+
+                    <!-- Media Container (Image or Video) -->
+                    <div id="game-media-container" class="hidden w-full max-w-2xl rounded-2xl overflow-hidden shadow-md bg-black my-2">
+                        <!-- Image / Video injected dynamically -->
+                    </div>
+                </div>
+
+                <!-- Kahoot Answer Buttons Grid (Supports 4 Choices & 2 Choices True/False) -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4" id="game-options-grid">
+                    <!-- Option 0 -->
+                    <button onclick="submitAnswer(0)" id="game-opt-btn-0" class="kahoot-btn w-full min-h-[76px] sm:min-h-[90px] p-4 rounded-2xl bg-[#e21b3c] text-white flex items-center gap-4 text-left relative overflow-hidden">
+                        <div class="w-11 h-11 rounded-xl bg-black/20 flex items-center justify-center text-xl font-bold shrink-0">▲</div>
+                        <span id="game-opt-text-0" class="text-base sm:text-xl font-bold leading-snug flex-grow">ตัวเลือก 1</span>
+                        <span id="game-opt-status-0" class="hidden text-2xl shrink-0"></span>
+                    </button>
+
+                    <!-- Option 1 -->
+                    <button onclick="submitAnswer(1)" id="game-opt-btn-1" class="kahoot-btn w-full min-h-[76px] sm:min-h-[90px] p-4 rounded-2xl bg-[#1368ce] text-white flex items-center gap-4 text-left relative overflow-hidden">
+                        <div class="w-11 h-11 rounded-xl bg-black/20 flex items-center justify-center text-xl font-bold shrink-0">◆</div>
+                        <span id="game-opt-text-1" class="text-base sm:text-xl font-bold leading-snug flex-grow">ตัวเลือก 2</span>
+                        <span id="game-opt-status-1" class="hidden text-2xl shrink-0"></span>
+                    </button>
+
+                    <!-- Option 2 -->
+                    <button onclick="submitAnswer(2)" id="game-opt-btn-2" class="kahoot-btn w-full min-h-[76px] sm:min-h-[90px] p-4 rounded-2xl bg-[#d89e00] text-white flex items-center gap-4 text-left relative overflow-hidden">
+                        <div class="w-11 h-11 rounded-xl bg-black/20 flex items-center justify-center text-xl font-bold shrink-0">●</div>
+                        <span id="game-opt-text-2" class="text-base sm:text-xl font-bold leading-snug flex-grow">ตัวเลือก 3</span>
+                        <span id="game-opt-status-2" class="hidden text-2xl shrink-0"></span>
+                    </button>
+
+                    <!-- Option 3 -->
+                    <button onclick="submitAnswer(3)" id="game-opt-btn-3" class="kahoot-btn w-full min-h-[76px] sm:min-h-[90px] p-4 rounded-2xl bg-[#26890c] text-white flex items-center gap-4 text-left relative overflow-hidden">
+                        <div class="w-11 h-11 rounded-xl bg-black/20 flex items-center justify-center text-xl font-bold shrink-0">■</div>
+                        <span id="game-opt-text-3" class="text-base sm:text-xl font-bold leading-snug flex-grow">ตัวเลือก 4</span>
+                        <span id="game-opt-status-3" class="hidden text-2xl shrink-0"></span>
+                    </button>
+                </div>
+
+                <!-- Bottom Navigation Controls (Previous / Next / Finish) -->
+                <div class="flex items-center justify-between gap-4 pb-4 pt-2 border-t border-gray-200">
+                    <button onclick="prevQuestion()" id="game-bottom-prev-btn" class="px-5 py-3 rounded-2xl bg-white border-2 border-gray-300 hover:bg-gray-100 text-gray-700 font-bold text-sm sm:text-base transition flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed">
+                        <i class="fa-solid fa-arrow-left"></i>
+                        <span>ย้อนกลับข้อก่อนหน้า</span>
+                    </button>
+
+                    <button onclick="nextQuestion()" id="game-next-btn" class="px-6 py-3 rounded-2xl bg-purple-900 hover:bg-purple-950 text-white font-extrabold text-sm sm:text-base shadow-md transition flex items-center gap-2">
+                        <span>ข้ามไปข้อถัดไป</span>
+                        <i class="fa-solid fa-arrow-right"></i>
+                    </button>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- ========================================================= -->
+        <!-- VIEW 4: FINAL SCORE SUMMARY & LEADERBOARD                 -->
+        <!-- ========================================================= -->
+        <section id="view-leaderboard" class="hidden flex-grow bg-kahoot-pattern py-8 px-4 sm:px-6 fade-in">
+            <div class="max-w-4xl mx-auto space-y-6">
+                
+                <!-- Personal Result Card (Shown if user just finished a quiz) -->
+                <div id="personal-result-card" class="hidden bg-white rounded-3xl p-6 sm:p-8 shadow-2xl text-center relative overflow-hidden">
+                    <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-100 text-amber-800 font-extrabold text-sm mb-3">
+                        <i class="fa-solid fa-medal"></i> สรุปผลการทดสอบของคุณ
+                    </div>
+                    <h2 id="result-player-name" class="text-2xl sm:text-3xl font-extrabold text-gray-900">ชื่อผู้ทดสอบ</h2>
+                    <p id="result-player-dept" class="text-purple-700 font-semibold text-base mb-6">แผนก</p>
+
+                    <div class="grid grid-cols-3 gap-3 sm:gap-6 max-w-xl mx-auto mb-6">
+                        <div class="bg-purple-50 border border-purple-100 rounded-2xl p-4">
+                            <div class="text-xs text-gray-500 font-bold uppercase">คะแนนรวม</div>
+                            <div id="result-total-score" class="text-2xl sm:text-4xl font-extrabold text-purple-800 mt-1">0</div>
+                        </div>
+                        <div class="bg-emerald-50 border border-emerald-100 rounded-2xl p-4">
+                            <div class="text-xs text-gray-500 font-bold uppercase">ตอบถูก</div>
+                            <div id="result-correct-count" class="text-2xl sm:text-4xl font-extrabold text-emerald-600 mt-1">0/0</div>
+                        </div>
+                        <div class="bg-amber-50 border border-amber-100 rounded-2xl p-4">
+                            <div class="text-xs text-gray-500 font-bold uppercase">ความแม่นยำ</div>
+                            <div id="result-accuracy" class="text-2xl sm:text-4xl font-extrabold text-amber-600 mt-1">0%</div>
+                        </div>
+                    </div>
+
+                    <!-- Review Answers Accordion Toggle -->
+                    <div class="flex flex-wrap justify-center gap-3">
+                        <button id="btn-toggle-review-answers" onclick="toggleReviewAnswers()" class="px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-500 text-purple-950 font-extrabold text-sm shadow-sm transition flex items-center gap-2">
+                            <i class="fa-solid fa-eye"></i>
+                            <span id="btn-toggle-review-text">กดดูเฉลยและคำอธิบายรายข้อ</span>
+                        </button>
+                        <button onclick="switchView('home')" class="px-6 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-sm shadow-md transition">
+                            <i class="fa-solid fa-rotate-right mr-1"></i> ทำแบบทดสอบอีกครั้ง / คนถัดไป
+                        </button>
+                    </div>
+
+                    <!-- Notice shown when instructor disables answer review -->
+                    <div id="review-disabled-notice" class="hidden mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-100 text-gray-500 text-xs sm:text-sm font-semibold">
+                        <i class="fa-solid fa-lock"></i> ผู้สอนปิดการแสดงเฉลยสำหรับแบบทดสอบชุดนี้
+                    </div>
+
+                    <!-- Detailed Question-by-Question Review List -->
+                    <div id="detailed-review-list" class="hidden mt-6 pt-6 border-t border-gray-200 text-left space-y-3">
+                        <!-- Injected via JS -->
+                    </div>
+                </div>
+
+                <!-- Overall Leaderboard Table -->
+                <div class="bg-white rounded-3xl p-6 sm:p-8 shadow-2xl">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                        <div>
+                            <h2 class="text-2xl font-extrabold text-gray-900 flex items-center gap-2">
+                                <i class="fa-solid fa-trophy text-amber-500"></i>
+                                ตารางคะแนนรวมผู้เข้าทดสอบ (Leaderboard)
+                            </h2>
+                            <p class="text-sm text-gray-500">จัดอันดับตามคะแนนรวมสูงสุดและความเร็วในการตอบ</p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button onclick="exportLeaderboardCSV()" class="px-4 py-2 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 font-bold text-xs sm:text-sm transition">
+                                <i class="fa-solid fa-file-excel mr-1"></i> ดาวน์โหลดผลคะแนน (CSV)
+                            </button>
+                            <button onclick="clearLeaderboardConfirm()" class="px-3 py-2 rounded-xl bg-red-50 text-red-600 hover:bg-red-100 font-bold text-xs sm:text-sm transition" title="ล้างประวัติคะแนน">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Leaderboard Table Wrapper -->
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="border-b-2 border-gray-100 text-xs font-extrabold uppercase text-gray-400">
+                                    <th class="py-3 px-4">อันดับ</th>
+                                    <th class="py-3 px-4">ชื่อ - นามสกุล</th>
+                                    <th class="py-3 px-4">แผนก / ฝ่าย</th>
+                                    <th class="py-3 px-4 text-center">ตอบถูก</th>
+                                    <th class="py-3 px-4 text-right">คะแนนรวม</th>
+                                </tr>
+                            </thead>
+                            <tbody id="leaderboard-tbody" class="divide-y divide-gray-100 text-sm sm:text-base">
+                                <!-- Rows injected via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div id="empty-leaderboard-msg" class="hidden py-12 text-center text-gray-400">
+                        <i class="fa-solid fa-users-slash text-4xl mb-3"></i>
+                        <p class="font-semibold">ยังไม่มีประวัติผู้ทำแบบทดสอบในรอบนี้</p>
+                        <button onclick="switchView('home')" class="mt-4 px-5 py-2 rounded-xl bg-purple-700 text-white font-bold text-sm">
+                            เริ่มทำแบบทดสอบเป็นคนแรก
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+    </main>
+
+    <!-- JAVASCRIPT APPLICATION LOGIC -->
+    <script>
+        /* ==========================================================================
+           1. INITIAL SAMPLE DATA & PERSISTENT STORAGE (LocalStorage)
+           ========================================================================== */
+        const DEFAULT_GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbw_ceM9sfZfHoOvqEYyax2s1kNmKi7YycEJgA4WaAn9bH1dGRW1clhHAH0WJRE0ROhwLg/exec";
+        const STORAGE_KEY_QUIZ = "eduquiz_saved_quiz_v1";
+        const STORAGE_KEY_LEADERBOARD = "eduquiz_saved_leaderboard_v1";
+        const STORAGE_KEY_GSHEET_URL = "eduquiz_custom_gsheet_url_v1";
+
+        function getActiveGoogleSheetUrl() {
+            const customUrl = (quizData && quizData.googleSheetUrl ? quizData.googleSheetUrl : "").trim();
+            if (customUrl) return customUrl;
+            try {
+                const savedUrl = (localStorage.getItem(STORAGE_KEY_GSHEET_URL) || "").trim();
+                if (savedUrl) return savedUrl;
+            } catch (e) {}
+            return DEFAULT_GOOGLE_SHEET_URL;
+        }
+
+        const defaultQuizData = {
+            title: "แบบทดสอบความรู้พื้นฐานดิจิทัลและความปลอดภัยไซเบอร์",
+            description: "ทดสอบความเข้าใจเกี่ยวกับเทคโนโลยีสารสนเทศ การใช้งานสื่อดิจิทัล และความปลอดภัยในองค์กร (มีภาพและวิดีโอประกอบ)",
+            allowReview: true,
+            googleSheetUrl: DEFAULT_GOOGLE_SHEET_URL,
+            questions: [
+                {
+                    id: 1,
+                    text: "ข้อใดคือวิธีตั้งรหัสผ่าน (Password) ที่ปลอดภัยที่สุดสำหรับบัญชีทำงาน?",
+                    timeLimit: 20,
+                    points: 1000,
+                    mediaType: "image",
+                    mediaUrl: "https://images.unsplash.com/photo-1555949963-ff9fe0c870eb?auto=format&fit=crop&w=800&q=80",
+                    options: [
+                        "ใช้วันเดือนปีเกิดของตัวเองเพื่อจะได้ไม่ลืม",
+                        "ใช้คำว่า Password1234",
+                        "ผสมตัวอักษรพิมพ์ใหญ่ พิมพ์เล็ก ตัวเลข และสัญลักษณ์ ยาว 12 ตัวขึ้นไป",
+                        "ใช้รหัสผ่านเดียวกันทุกเว็บไซต์"
+                    ],
+                    correctIndex: 2,
+                    explanation: "รหัสผ่านที่ปลอดภัยควรมีความยาวอย่างน้อย 12 ตัวอักษร และผสมตัวพิมพ์ใหญ่ พิมพ์เล็ก ตัวเลข และอักขระพิเศษ เพื่อป้องกันการสุ่มเดาจากแฮกเกอร์"
+                },
+                {
+                    id: 2,
+                    text: "จากวิดีโอ/สถานการณ์จำลอง หากได้รับอีเมลแจ้งให้คลิกลิงก์ด่วนเพื่อยืนยันรหัสผ่าน ควรทำอย่างไร?",
+                    timeLimit: 30,
+                    points: 1000,
+                    mediaType: "video",
+                    mediaUrl: "https://www.youtube.com/watch?v=XBkzBrXlle0",
+                    options: [
+                        "รีบคลิกลิงก์และกรอกรหัสผ่านทันที",
+                        "ตรวจสอบชื่อผู้ส่งอย่างละเอียด และไม่คลิกลิงก์ที่น่าสงสัย (Phishing)",
+                        "ส่งต่ออีเมลนี้ให้เพื่อนร่วมงานทุกคนช่วยเช็ก",
+                        "ตอบกลับอีเมลเพื่อถามรหัสผ่านใหม่"
+                    ],
+                    correctIndex: 1,
+                    explanation: "การหลอกลวงแบบ Phishing มักสร้างสถานการณ์เร่งด่วนให้เหยื่อตกใจและรีบคลิกลิงก์ ควรตรวจสอบโดเมนผู้ส่งและติดต่อฝ่ายไอทีทันที"
+                },
+                {
+                    id: 3,
+                    text: "สัญลักษณ์รูปแม่กุญแจ (HTTPS) บนแถบที่อยู่เว็บไซต์ (URL) หมายถึงอะไร?",
+                    timeLimit: 20,
+                    points: 1000,
+                    mediaType: "none",
+                    mediaUrl: "",
+                    options: [
+                        "เว็บไซต์นี้เปิดให้ดาวน์โหลดไฟล์ฟรีทั้งหมด",
+                        "การเชื่อมต่อระหว่างเบราว์เซอร์และเว็บไซต์มีการเข้ารหัสข้อมูลปลอดภัย",
+                        "เว็บไซต์นี้ปิดปรับปรุงชั่วคราว",
+                        "ต้องเสียค่าบริการรายเดือนก่อนเข้าใช้งาน"
+                    ],
+                    correctIndex: 1,
+                    explanation: "HTTPS ย่อมาจาก Hypertext Transfer Protocol Secure ซึ่งช่วยเข้ารหัสข้อมูลระหว่างส่ง ป้องกันการดักจับข้อมูลระหว่างทาง"
+                },
+                {
+                    id: 4,
+                    type: "true_false",
+                    text: "การเปิดใช้งาน 2FA (Two-Factor Authentication) ช่วยป้องกันบัญชีได้แม้รหัสผ่านจะรั่วไหล ใช่หรือไม่?",
+                    timeLimit: 20,
+                    points: 1000,
+                    mediaType: "image",
+                    mediaUrl: "https://images.unsplash.com/photo-1563986768609-322da13575f3?auto=format&fit=crop&w=800&q=80",
+                    options: [
+                        "ถูก (True)",
+                        "ผิด (False)",
+                        "",
+                        ""
+                    ],
+                    correctIndex: 0,
+                    explanation: "ถูกต้อง! 2FA เป็นการยืนยันตัวตน 2 ขั้นตอน เช่น รหัสผ่าน + รหัส OTP จากมือถือ ทำให้ผู้ไม่หวังดีไม่สามารถเข้าบัญชีได้แม้จะรู้รหัสผ่านของเรา"
+                }
+            ]
+        };
+
+        // Load saved quiz from localStorage if available
+        function loadSavedQuizData() {
+            let savedUrl = DEFAULT_GOOGLE_SHEET_URL;
+            try {
+                const storedUrl = (localStorage.getItem(STORAGE_KEY_GSHEET_URL) || "").trim();
+                if (storedUrl) savedUrl = storedUrl;
+            } catch (e) {}
+
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY_QUIZ);
+                if (raw) {
+                    const parsed = JSON.parse(raw);
+                    if (parsed && Array.isArray(parsed.questions) && parsed.questions.length > 0) {
+                        if (!parsed.googleSheetUrl || !parsed.googleSheetUrl.trim()) {
+                            parsed.googleSheetUrl = savedUrl;
+                        }
+                        return parsed;
+                    }
+                }
+            } catch (e) {
+                console.warn("Failed to load quiz from localStorage:", e);
+            }
+            const fallback = JSON.parse(JSON.stringify(defaultQuizData));
+            fallback.googleSheetUrl = savedUrl;
+            return fallback;
+        }
+
+        // Persist quiz automatically to localStorage
+        function persistQuizData() {
+            try {
+                const currentUrl = (quizData.googleSheetUrl || "").trim();
+                localStorage.setItem(STORAGE_KEY_QUIZ, JSON.stringify(quizData));
+                if (currentUrl) {
+                    localStorage.setItem(STORAGE_KEY_GSHEET_URL, currentUrl);
+                }
+                const badge = document.getElementById('autosave-badge');
+                if (badge) {
+                    badge.innerHTML = '<i class="fa-solid fa-check"></i> บันทึกแล้ว (' + new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ')';
+                }
+            } catch (e) {
+                console.warn("Failed to save quiz to localStorage:", e);
+                showToast("พื้นที่จัดเก็บในเบราว์เซอร์เต็ม แนะนำให้กด 'ส่งออกไฟล์ (.json)' เก็บสำรองไว้", "warning");
+            }
+        }
+
+        // Load saved leaderboard from localStorage if available
+        function loadSavedLeaderboard() {
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY_LEADERBOARD);
+                if (raw) {
+                    const parsed = JSON.parse(raw);
+                    if (Array.isArray(parsed)) return parsed;
+                }
+            } catch (e) {}
+            return [
+                { name: "นางสาวกัญญา รักเรียน", department: "ฝ่ายทรัพยากรบุคคล (HR)", score: 4450, correct: 4, total: 4, timestamp: Date.now() - 3600000 },
+                { name: "นายธนกฤต พัฒนาไว", department: "แผนกเทคโนโลยีสารสนเทศ", score: 3820, correct: 4, total: 4, timestamp: Date.now() - 1800000 },
+                { name: "นางสาวปิยะดา ใจสู้", department: "ฝ่ายการตลาด", score: 2650, correct: 3, total: 4, timestamp: Date.now() - 900000 }
+            ];
+        }
+
+        function persistLeaderboardData() {
+            try {
+                localStorage.setItem(STORAGE_KEY_LEADERBOARD, JSON.stringify(leaderboardData));
+            } catch (e) {}
+        }
+
+        // Application State
+        let quizData = loadSavedQuizData();
+        let editingQuestionIndex = 0;
+        let soundEnabled = true;
+        let isInstructorAuthenticated = false;
+        const INSTRUCTOR_PASSWORD = "ptukja";
+
+        // Current Player & Gameplay State
+        let currentPlayer = {
+            name: "",
+            department: "",
+            score: 0,
+            correctCount: 0,
+            answersHistory: []
+        };
+
+        let gameState = {
+            currentQuestionIdx: 0,
+            timeLeft: 20,
+            timerInterval: null,
+            isTransitioning: false
+        };
+
+        let leaderboardData = loadSavedLeaderboard();
+
+        /* ==========================================================================
+           2. SOUND EFFECTS ENGINE (Tone.js - Pure Synthesized Web Audio)
+           ========================================================================== */
+        let synth = null;
+
+        function initAudio() {
+            if (!synth && typeof Tone !== 'undefined') {
+                synth = new Tone.PolySynth(Tone.Synth).toDestination();
+                synth.volume.value = -8;
+            }
+        }
+
+        function playSound(type) {
+            if (!soundEnabled) return;
+            try {
+                initAudio();
+                if (Tone.context.state !== 'running') {
+                    Tone.start();
+                }
+                const now = Tone.now();
+                if (type === 'click') {
+                    synth.triggerAttackRelease("C5", "32n", now);
+                } else if (type === 'correct') {
+                    synth.triggerAttackRelease(["C5", "E5", "G5", "C6"], "16n", now);
+                } else if (type === 'wrong') {
+                    synth.triggerAttackRelease(["F3", "E3"], "8n", now);
+                } else if (type === 'tick') {
+                    synth.triggerAttackRelease("A5", "64n", now);
+                } else if (type === 'finish') {
+                    synth.triggerAttackRelease(["C4", "E4", "G4", "B4", "C5"], "8n", now);
+                }
+            } catch (e) {
+                // Ignore audio errors if user hasn't interacted yet
+            }
+        }
+
+        function toggleSound() {
+            soundEnabled = !soundEnabled;
+            const btn = document.getElementById('sound-toggle-btn');
+            btn.innerHTML = soundEnabled 
+                ? '<i class="fa-solid fa-volume-high text-lg text-purple-700"></i>' 
+                : '<i class="fa-solid fa-volume-xmark text-lg text-gray-400"></i>';
+            showToast(soundEnabled ? "เปิดเสียงเอฟเฟกต์แล้ว" : "ปิดเสียงเอฟเฟกต์แล้ว", "info");
+        }
+
+        /* ==========================================================================
+           3. UI UTILITIES (TOASTS, MODALS, NAVIGATION)
+           ========================================================================== */
+        function showToast(message, type = "success") {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            const colors = {
+                success: "bg-emerald-600 text-white",
+                error: "bg-red-600 text-white",
+                info: "bg-purple-800 text-white",
+                warning: "bg-amber-500 text-gray-900"
+            };
+            const icons = {
+                success: "fa-circle-check",
+                error: "fa-circle-xmark",
+                info: "fa-circle-info",
+                warning: "fa-triangle-exclamation"
+            };
+
+            toast.className = `${colors[type] || colors.info} px-4 py-3 rounded-2xl shadow-xl flex items-center gap-3 font-semibold text-sm pointer-events-auto transform transition-all duration-300 translate-x-full opacity-0`;
+            toast.innerHTML = `<i class="fa-solid ${icons[type]} text-lg"></i><span>${message}</span>`;
+            
+            container.appendChild(toast);
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-x-full', 'opacity-0');
+            });
+
+            setTimeout(() => {
+                toast.classList.add('translate-x-full', 'opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        function showConfirmModal(title, message, onConfirm) {
+            const modal = document.getElementById('confirm-modal');
+            const box = document.getElementById('confirm-modal-box');
+            document.getElementById('confirm-title').textContent = title;
+            document.getElementById('confirm-message').textContent = message;
+
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            requestAnimationFrame(() => {
+                box.classList.remove('scale-95', 'opacity-0');
+            });
+
+            const close = () => {
+                box.classList.add('scale-95', 'opacity-0');
+                setTimeout(() => {
+                    modal.classList.add('hidden');
+                    modal.classList.remove('flex');
+                }, 200);
+            };
+
+            document.getElementById('confirm-cancel-btn').onclick = close;
+            document.getElementById('confirm-ok-btn').onclick = () => {
+                close();
+                onConfirm();
+            };
+        }
+
+        function switchView(viewName) {
+            if (viewName === 'creator' && !isInstructorAuthenticated) {
+                openInstructorAuthModal();
+                return;
+            }
+
+            if (viewName !== 'game' && gameState.timerInterval) {
+                clearInterval(gameState.timerInterval);
+            }
+
+            const views = ['home', 'creator', 'game', 'leaderboard'];
+            views.forEach(v => {
+                const el = document.getElementById(`view-${v}`);
+                if (v === viewName) {
+                    el.classList.remove('hidden');
+                } else {
+                    el.classList.add('hidden');
+                }
+            });
+
+            if (viewName === 'home') {
+                refreshHomeView();
+            } else if (viewName === 'creator') {
+                refreshCreatorView();
+            } else if (viewName === 'leaderboard') {
+                renderLeaderboardTable();
+            }
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function openInstructorAuthModal() {
+            const modal = document.getElementById('instructor-auth-modal');
+            const box = document.getElementById('instructor-auth-box');
+            const input = document.getElementById('instructor-password-input');
+            input.value = '';
+
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            requestAnimationFrame(() => {
+                box.classList.remove('scale-95', 'opacity-0');
+                input.focus();
+            });
+        }
+
+        function closeInstructorAuthModal() {
+            const modal = document.getElementById('instructor-auth-modal');
+            const box = document.getElementById('instructor-auth-box');
+            box.classList.add('scale-95', 'opacity-0');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            }, 200);
+        }
+
+        function verifyInstructorPassword(event) {
+            event.preventDefault();
+            const input = document.getElementById('instructor-password-input');
+            if (input.value === INSTRUCTOR_PASSWORD) {
+                isInstructorAuthenticated = true;
+                playSound('correct');
+                closeInstructorAuthModal();
+                showToast("ยืนยันรหัสผ่านสำเร็จ ยินดีต้อนรับผู้สอน!", "success");
+                switchView('creator');
+            } else {
+                playSound('wrong');
+                showToast("รหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง", "error");
+                input.value = '';
+                input.focus();
+            }
+        }
+
+        /* ==========================================================================
+           4. HOME VIEW LOGIC
+           ========================================================================== */
+        function refreshHomeView() {
+            document.getElementById('home-quiz-title').textContent = quizData.title;
+            document.getElementById('home-quiz-desc').textContent = quizData.description;
+            document.getElementById('home-question-count').textContent = quizData.questions.length;
+            document.getElementById('total-players-count').textContent = leaderboardData.length;
+        }
+
+        function handleStartQuiz(event) {
+            event.preventDefault();
+            const nameInput = document.getElementById('player-name').value.trim();
+            const deptInput = document.getElementById('player-dept').value.trim();
+
+            if (!nameInput || !deptInput) {
+                showToast("กรุณากรอกชื่อ-นามสกุล และแผนกให้ครบถ้วน", "error");
+                return;
+            }
+
+            if (quizData.questions.length === 0) {
+                showToast("ยังไม่มีคำถามในแบบทดสอบ กรุณาสร้างคำถามก่อน", "warning");
+                switchView('creator');
+                return;
+            }
+
+            playSound('click');
+
+            currentPlayer = {
+                name: nameInput,
+                department: deptInput,
+                score: 0,
+                correctCount: 0,
+                answersHistory: new Array(quizData.questions.length).fill(null)
+            };
+
+            gameState.currentQuestionIdx = 0;
+            gameState.isTransitioning = false;
+            document.getElementById('game-player-badge').textContent = `${currentPlayer.name} (${currentPlayer.department})`;
+
+            switchView('game');
+            loadQuestion(0);
+        }
+
+        /* ==========================================================================
+           5. INSTRUCTOR CREATOR STUDIO LOGIC
+           ========================================================================== */
+        function refreshCreatorView() {
+            document.getElementById('creator-quiz-title').value = quizData.title;
+            document.getElementById('creator-quiz-desc').value = quizData.description;
+            document.getElementById('creator-gsheet-url').value = getActiveGoogleSheetUrl();
+            updateGoogleSheetBadge();
+            
+            const allowReview = quizData.allowReview !== false;
+            document.getElementById('creator-allow-review').checked = allowReview;
+            updateAllowReviewLabel(allowReview);
+            
+            if (editingQuestionIndex >= quizData.questions.length) {
+                editingQuestionIndex = Math.max(0, quizData.questions.length - 1);
+            }
+            renderQuestionListSidebar();
+            loadQuestionIntoEditor(editingQuestionIndex);
+        }
+
+        function updateGoogleSheetBadge() {
+            const badge = document.getElementById('gsheet-status-badge');
+            if (!badge) return;
+            const url = (quizData.googleSheetUrl || "").trim();
+            if (url && url.startsWith("https://script.google.com/")) {
+                badge.textContent = "เชื่อมต่อแล้ว";
+                badge.className = "text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-600 text-white";
+            } else if (url) {
+                badge.textContent = "กำหนดลิงก์เอง";
+                badge.className = "text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-500 text-white";
+            } else {
+                badge.textContent = "ยังไม่ได้ใส่ลิงก์";
+                badge.className = "text-xs font-bold px-2.5 py-0.5 rounded-full bg-red-500 text-white";
+            }
+        }
+
+        function updateGoogleSheetUrl() {
+            const input = document.getElementById('creator-gsheet-url');
+            quizData.googleSheetUrl = input.value.trim();
+            updateGoogleSheetBadge();
+            persistQuizData();
+        }
+
+        function resetDefaultGoogleSheetUrl() {
+            quizData.googleSheetUrl = DEFAULT_GOOGLE_SHEET_URL;
+            document.getElementById('creator-gsheet-url').value = DEFAULT_GOOGLE_SHEET_URL;
+            updateGoogleSheetBadge();
+            persistQuizData();
+            showToast("คืนค่าลิงก์ Google Sheets เริ่มต้นเรียบร้อยแล้ว", "info");
+        }
+
+        function saveAndGoHome() {
+            persistQuizData();
+            showToast("บันทึกชุดข้อสอบเรียบร้อยแล้ว! ครั้งต่อไปเปิดมาใช้งานต่อได้ทันที", "success");
+            switchView('home');
+        }
+
+        async function sendScoreToGoogleSheet(payload) {
+            const url = getActiveGoogleSheetUrl();
+            if (!url) return false;
+
+            try {
+                await fetch(url, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: {
+                        'Content-Type': 'text/plain;charset=utf-8'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                return true;
+            } catch (err) {
+                console.error("Google Sheets Sync Error:", err);
+                return false;
+            }
+        }
+
+        async function saveQuizToGoogleSheets() {
+            const targetUrl = getActiveGoogleSheetUrl();
+            if (!targetUrl) {
+                showToast("กรุณากรอกลิงก์ Google Apps Script Web App URL ก่อนบันทึก", "warning");
+                return;
+            }
+
+            const btn = document.getElementById('btn-push-quiz-sheet');
+            const originalHTML = btn ? btn.innerHTML : '';
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> <span>กำลังบันทึกขึ้นคลาวด์...</span>';
+            }
+
+            try {
+                persistQuizData();
+                // Strip huge base64 strings if any exceed Google Sheets cell limit (50,000 chars)
+                const safeQuizClone = JSON.parse(JSON.stringify(quizData));
+                let skippedLargeImage = false;
+                safeQuizClone.questions.forEach(q => {
+                    if (q.mediaUrl && q.mediaUrl.startsWith('data:') && q.mediaUrl.length > 45000) {
+                        q.mediaUrl = '';
+                        q.mediaType = 'none';
+                        skippedLargeImage = true;
+                    }
+                });
+
+                await fetch(targetUrl, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: {
+                        'Content-Type': 'text/plain;charset=utf-8'
+                    },
+                    body: JSON.stringify({
+                        action: 'save_quiz',
+                        quizData: safeQuizClone
+                    })
+                });
+
+                playSound('correct');
+                if (skippedLargeImage) {
+                    showToast("บันทึกข้อสอบขึ้น Google Sheets แล้ว (รูปภาพขนาดใหญ่ถูกข้าม แนะนำให้ใช้ลิงก์ URL รูปภาพ)", "warning");
+                } else {
+                    showToast("บันทึกชุดข้อสอบขึ้น Google Sheets สำเร็จ! ทุกเครื่องสามารถดึงข้อสอบนี้ไปทำได้ทันที", "success");
+                }
+            } catch (err) {
+                console.error("Save Quiz to Sheets Error:", err);
+                playSound('wrong');
+                showToast("ไม่สามารถบันทึกขึ้น Google Sheets ได้ กรุณาตรวจสอบลิงก์และการอัปเดต Apps Script", "error");
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = originalHTML;
+                }
+            }
+        }
+
+        async function fetchQuizFromGoogleSheets(showNotification = false) {
+            const targetUrl = getActiveGoogleSheetUrl();
+            if (!targetUrl) {
+                if (showNotification) showToast("กรุณาระบุลิงก์ Google Sheets Web App URL ในโหมดผู้สอนก่อน", "warning");
+                return;
+            }
+
+            const syncBtn = document.getElementById('home-sync-btn');
+            if (syncBtn) {
+                syncBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> <span>กำลังโหลด...</span>';
+            }
+
+            try {
+                const separator = targetUrl.includes('?') ? '&' : '?';
+                const response = await fetch(`${targetUrl}${separator}t=${Date.now()}`);
+                const data = await response.json();
+
+                if (data && Array.isArray(data.questions) && data.questions.length > 0) {
+                    data.googleSheetUrl = targetUrl;
+                    if (typeof data.allowReview === 'undefined') {
+                        data.allowReview = true;
+                    }
+                    quizData = data;
+                    editingQuestionIndex = 0;
+                    persistQuizData();
+                    refreshHomeView();
+                    if (!document.getElementById('view-creator').classList.contains('hidden')) {
+                        refreshCreatorView();
+                    }
+                    if (showNotification) {
+                        playSound('correct');
+                        showToast(`ดึงข้อสอบล่าสุดจาก Google Sheets สำเร็จ (${quizData.questions.length} ข้อ)`, "success");
+                    }
+                } else if (showNotification) {
+                    showToast("ยังไม่มีข้อมูลข้อสอบใน Google Sheets (กรุณากด 'บันทึกข้อสอบขึ้น Google Sheets' ในโหมดผู้สอนก่อน)", "warning");
+                }
+            } catch (err) {
+                console.warn("Fetch Quiz from Sheets Error:", err);
+                if (showNotification) {
+                    showToast("ไม่สามารถดึงข้อสอบจาก Google Sheets ได้ (ตรวจสอบลิงก์หรือการ Deploy เวอร์ชันใหม่)", "error");
+                }
+            } finally {
+                if (syncBtn) {
+                    syncBtn.innerHTML = '<i class="fa-solid fa-cloud-arrow-down"></i> <span>อัปเดตข้อสอบ</span>';
+                }
+            }
+        }
+
+        async function testGoogleSheetConnection() {
+            const targetUrl = getActiveGoogleSheetUrl();
+            if (!targetUrl) {
+                showToast("กรุณากรอกลิงก์ Google Apps Script Web App URL ก่อนทดสอบ", "warning");
+                return;
+            }
+            showToast("กำลังส่งข้อมูลทดสอบไปยัง Google Sheets...", "info");
+            const success = await sendScoreToGoogleSheet({
+                name: "ทดสอบระบบ (Test User)",
+                department: "แผนกทดสอบ",
+                score: 9999,
+                correct: quizData.questions.length,
+                total: quizData.questions.length,
+                quizTitle: quizData.title
+            });
+
+            if (success) {
+                playSound('correct');
+                showToast("ส่งข้อมูลทดสอบสำเร็จ! กรุณาตรวจสอบแถวใหม่ใน Google Sheets ของคุณ", "success");
+            } else {
+                playSound('wrong');
+                showToast("เกิดข้อผิดพลาดในการเชื่อมต่อ กรุณาตรวจสอบลิงก์อีกครั้ง", "error");
+            }
+        }
+
+        function updateAllowReviewLabel(isAllowed) {
+            const label = document.getElementById('creator-allow-review-label');
+            if (isAllowed) {
+                label.textContent = "เปิดแสดงเฉลย";
+                label.className = "ms-3 text-sm font-bold text-emerald-700";
+            } else {
+                label.textContent = "ปิดแสดงเฉลย";
+                label.className = "ms-3 text-sm font-bold text-gray-500";
+            }
+        }
+
+        function updateQuizMeta() {
+            quizData.title = document.getElementById('creator-quiz-title').value;
+            quizData.description = document.getElementById('creator-quiz-desc').value;
+            const urlInput = document.getElementById('creator-gsheet-url');
+            if (urlInput) {
+                quizData.googleSheetUrl = urlInput.value.trim();
+            }
+            const isAllowed = document.getElementById('creator-allow-review').checked;
+            quizData.allowReview = isAllowed;
+            updateAllowReviewLabel(isAllowed);
+            persistQuizData();
+        }
+
+        function renderQuestionListSidebar() {
+            const listContainer = document.getElementById('creator-question-list');
+            document.getElementById('creator-q-count').textContent = quizData.questions.length;
+            listContainer.innerHTML = '';
+
+            quizData.questions.forEach((q, idx) => {
+                const isSelected = idx === editingQuestionIndex;
+                const qType = q.type || 'multiple';
+                const typeBadge = qType === 'true_false'
+                    ? '<span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-md"><i class="fa-solid fa-check-double"></i> ถูก/ผิด</span>'
+                    : '<span class="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-md"><i class="fa-solid fa-list-ul"></i> 4 ตัวเลือก</span>';
+
+                const mediaBadge = q.mediaType === 'image' 
+                    ? '<span class="text-xs bg-pink-100 text-pink-700 px-2 py-0.5 rounded-md"><i class="fa-solid fa-image"></i> ภาพ</span>'
+                    : q.mediaType === 'video'
+                    ? '<span class="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-md"><i class="fa-brands fa-youtube"></i> วิดีโอ</span>'
+                    : '<span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md"><i class="fa-solid fa-font"></i> ข้อความ</span>';
+
+                const ptsValue = Number(q.points) || 0;
+                const pointsBadge = `<span class="text-xs bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded-md"><i class="fa-solid fa-star text-amber-500"></i> ${ptsValue.toLocaleString()}</span>`;
+
+                const card = document.createElement('div');
+                card.className = `p-3.5 rounded-2xl border-2 cursor-pointer transition flex items-start justify-between gap-2 ${
+                    isSelected 
+                    ? 'border-purple-600 bg-purple-50/70 shadow-sm' 
+                    : 'border-gray-100 hover:border-purple-200 bg-white'
+                }`;
+                card.onclick = () => {
+                    editingQuestionIndex = idx;
+                    renderQuestionListSidebar();
+                    loadQuestionIntoEditor(idx);
+                };
+
+                card.innerHTML = `
+                    <div class="overflow-hidden">
+                        <div class="flex flex-wrap items-center gap-1.5 mb-1">
+                            <span class="font-extrabold text-xs text-purple-800">ข้อ ${idx + 1}</span>
+                            ${typeBadge}
+                            ${mediaBadge}
+                            ${pointsBadge}
+                            <span class="text-xs text-gray-400"><i class="fa-regular fa-clock"></i> ${q.timeLimit}วิ</span>
+                        </div>
+                        <p class="text-sm font-semibold text-gray-800 truncate">${q.text || '(ยังไม่ได้พิมพ์คำถาม)'}</p>
+                    </div>
+                `;
+                listContainer.appendChild(card);
+            });
+        }
+
+        function changeQuestionType(newType) {
+            const q = quizData.questions[editingQuestionIndex];
+            if (!q) return;
+
+            q.type = newType;
+            if (newType === 'true_false') {
+                q.options = ["ถูก (True)", "ผิด (False)", "", ""];
+                if (q.correctIndex > 1) {
+                    q.correctIndex = 0;
+                }
+            } else {
+                q.options = [
+                    q.options[0] && q.options[0] !== "ถูก (True)" ? q.options[0] : "ตัวเลือกที่ 1",
+                    q.options[1] && q.options[1] !== "ผิด (False)" ? q.options[1] : "ตัวเลือกที่ 2",
+                    q.options[2] || "ตัวเลือกที่ 3",
+                    q.options[3] || "ตัวเลือกที่ 4"
+                ];
+            }
+
+            playSound('click');
+            persistQuizData();
+            loadQuestionIntoEditor(editingQuestionIndex);
+            renderQuestionListSidebar();
+        }
+
+        function loadQuestionIntoEditor(index) {
+            const q = quizData.questions[index];
+            if (!q) return;
+
+            const qType = q.type || 'multiple';
+            document.getElementById('editor-q-number').textContent = index + 1;
+            document.getElementById('edit-q-type').value = qType;
+            document.getElementById('edit-q-text').value = q.text;
+            document.getElementById('edit-q-time').value = q.timeLimit;
+            document.getElementById('edit-q-points').value = typeof q.points === 'number' ? q.points : 1000;
+            document.getElementById('edit-q-media-url').value = q.mediaUrl || '';
+            document.getElementById('edit-q-explanation').value = q.explanation || '';
+
+            const isTrueFalse = qType === 'true_false';
+            for (let i = 0; i < 4; i++) {
+                const box = document.getElementById(`edit-opt-box-${i}`);
+                const input = document.getElementById(`edit-opt-${i}`);
+                input.value = q.options[i] || '';
+
+                if (isTrueFalse) {
+                    if (i < 2) {
+                        box.classList.remove('hidden');
+                        box.classList.add('py-4');
+                    } else {
+                        box.classList.add('hidden');
+                    }
+                } else {
+                    box.classList.remove('hidden', 'py-4');
+                }
+            }
+
+            updateCorrectButtonUI(q.correctIndex);
+            updateMediaTabsUI(q.mediaType || 'none');
+            updateMediaPreview();
+        }
+
+        function saveCurrentQuestionEdits() {
+            const q = quizData.questions[editingQuestionIndex];
+            if (!q) return;
+
+            q.type = document.getElementById('edit-q-type').value;
+            q.text = document.getElementById('edit-q-text').value;
+            q.timeLimit = parseInt(document.getElementById('edit-q-time').value, 10);
+            const rawPoints = parseInt(document.getElementById('edit-q-points').value, 10);
+            q.points = isNaN(rawPoints) || rawPoints < 0 ? 0 : rawPoints;
+            q.mediaUrl = document.getElementById('edit-q-media-url').value.trim();
+            q.explanation = document.getElementById('edit-q-explanation').value;
+
+            for (let i = 0; i < 4; i++) {
+                q.options[i] = document.getElementById(`edit-opt-${i}`).value;
+            }
+
+            persistQuizData();
+            renderQuestionListSidebar();
+        }
+
+        function setCorrectOption(optIdx) {
+            const q = quizData.questions[editingQuestionIndex];
+            if (!q) return;
+            q.correctIndex = optIdx;
+            updateCorrectButtonUI(optIdx);
+            persistQuizData();
+            playSound('click');
+        }
+
+        function updateCorrectButtonUI(correctIdx) {
+            for (let i = 0; i < 4; i++) {
+                const btn = document.getElementById(`correct-btn-${i}`);
+                if (i === correctIdx) {
+                    btn.classList.add('bg-white', 'text-emerald-600', 'scale-110', 'shadow-md');
+                    btn.classList.remove('text-white/40');
+                } else {
+                    btn.classList.remove('bg-white', 'text-emerald-600', 'scale-110', 'shadow-md');
+                    btn.classList.add('text-white/40');
+                }
+            }
+        }
+
+        function setMediaType(type) {
+            const q = quizData.questions[editingQuestionIndex];
+            if (!q) return;
+            q.mediaType = type;
+            if (type === 'none') {
+                q.mediaUrl = '';
+                document.getElementById('edit-q-media-url').value = '';
+            }
+            persistQuizData();
+            updateMediaTabsUI(type);
+            updateMediaPreview();
+            renderQuestionListSidebar();
+        }
+
+        function updateMediaTabsUI(activeType) {
+            const types = ['none', 'image', 'video'];
+            types.forEach(t => {
+                const btn = document.getElementById(`media-tab-${t}`);
+                if (t === activeType) {
+                    btn.className = "media-tab px-4 py-2 rounded-xl text-xs font-bold border border-purple-600 bg-purple-700 text-white shadow-sm transition";
+                } else {
+                    btn.className = "media-tab px-4 py-2 rounded-xl text-xs font-bold border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 transition";
+                }
+            });
+
+            const container = document.getElementById('media-input-container');
+            const urlInput = document.getElementById('edit-q-media-url');
+            if (activeType === 'none') {
+                container.classList.add('hidden');
+            } else {
+                container.classList.remove('hidden');
+                urlInput.placeholder = activeType === 'image' 
+                    ? "วางลิงก์รูปภาพ (เช่น https://...) หรือกดเลือกไฟล์ภาพจากเครื่อง" 
+                    : "วางลิงก์วิดีโอ YouTube (เช่น https://www.youtube.com/watch?v=...) หรือไฟล์วิดีโอ MP4";
+            }
+        }
+
+        function handleMediaFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const isVideo = file.type.startsWith('video/');
+            const mediaType = isVideo ? 'video' : 'image';
+            const q = quizData.questions[editingQuestionIndex];
+
+            if (!isVideo && file.size <= 1.5 * 1024 * 1024) {
+                // Convert small images to Base64 Data URL so they persist across browser reloads!
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    q.mediaType = 'image';
+                    q.mediaUrl = e.target.result;
+                    document.getElementById('edit-q-media-url').value = "(อัปโหลดรูปภาพในเครื่องแล้ว)";
+                    persistQuizData();
+                    updateMediaTabsUI('image');
+                    updateMediaPreview();
+                    renderQuestionListSidebar();
+                    showToast(`อัปโหลดและบันทึกรูปภาพ "${file.name}" ถาวรเรียบร้อยแล้ว`, "success");
+                };
+                reader.readAsDataURL(file);
+            } else {
+                const objectUrl = URL.createObjectURL(file);
+                q.mediaType = mediaType;
+                q.mediaUrl = objectUrl;
+                document.getElementById('edit-q-media-url').value = objectUrl;
+                persistQuizData();
+                updateMediaTabsUI(mediaType);
+                updateMediaPreview();
+                renderQuestionListSidebar();
+                showToast(`อัปโหลดไฟล์ "${file.name}" แล้ว (หมายเหตุ: ไฟล์ขนาดใหญ่/วิดีโอแนะนำให้วางลิงก์ URL/YouTube เพื่อให้บันทึกถาวร)`, "warning");
+            }
+        }
+
+        function parseYouTubeEmbedUrl(url) {
+            if (!url) return null;
+            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+            const match = url.match(regExp);
+            if (match && match[2].length === 11) {
+                return `https://www.youtube.com/embed/${match[2]}?rel=0`;
+            }
+            return null;
+        }
+
+        function renderMediaHTML(mediaType, mediaUrl, isGameView = false) {
+            if (!mediaUrl || mediaType === 'none') return '';
+
+            const heightClass = isGameView ? 'max-h-[300px] sm:max-h-[340px]' : 'max-h-52';
+
+            if (mediaType === 'image') {
+                return `<img src="${mediaUrl}" alt="สื่อประกอบคำถาม" class="w-full ${heightClass} object-contain mx-auto" onerror="this.src='https://placehold.co/600x350/46178f/ffffff?text=ไม่สามารถโหลดรูปภาพได้'">`;
+            } else if (mediaType === 'video') {
+                const ytEmbed = parseYouTubeEmbedUrl(mediaUrl);
+                if (ytEmbed) {
+                    return `<div class="aspect-video w-full ${isGameView ? 'max-h-[340px]' : 'max-h-52'}">
+                                <iframe class="w-full h-full" src="${ytEmbed}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+                            </div>`;
+                } else {
+                    return `<video src="${mediaUrl}" controls class="w-full ${heightClass} mx-auto bg-black"></video>`;
+                }
+            }
+            return '';
+        }
+
+        function updateMediaPreview() {
+            const q = quizData.questions[editingQuestionIndex];
+            const previewBox = document.getElementById('creator-media-preview');
+            if (!q || q.mediaType === 'none' || !q.mediaUrl) {
+                previewBox.innerHTML = '<span class="text-xs text-gray-400 py-6">ตัวอย่างสื่อประกอบจะแสดงที่นี่</span>';
+                return;
+            }
+            previewBox.innerHTML = renderMediaHTML(q.mediaType, q.mediaUrl, false);
+        }
+
+        function addNewQuestion() {
+            const newQ = {
+                id: Date.now(),
+                type: "multiple",
+                text: "",
+                timeLimit: 20,
+                points: 1000,
+                mediaType: "none",
+                mediaUrl: "",
+                options: ["ตัวเลือกที่ 1", "ตัวเลือกที่ 2", "ตัวเลือกที่ 3", "ตัวเลือกที่ 4"],
+                correctIndex: 0,
+                explanation: ""
+            };
+            quizData.questions.push(newQ);
+            editingQuestionIndex = quizData.questions.length - 1;
+            persistQuizData();
+            refreshCreatorView();
+            showToast("เพิ่มคำถามข้อใหม่และบันทึกอัตโนมัติแล้ว", "success");
+        }
+
+        function deleteCurrentQuestion() {
+            if (quizData.questions.length <= 1) {
+                showToast("ต้องมีคำถามอย่างน้อย 1 ข้อในแบบทดสอบ", "warning");
+                return;
+            }
+            showConfirmModal(
+                "ลบคำถามข้อนี้?",
+                `คุณต้องการลบคำถามข้อที่ ${editingQuestionIndex + 1} ใช่หรือไม่?`,
+                () => {
+                    quizData.questions.splice(editingQuestionIndex, 1);
+                    editingQuestionIndex = Math.max(0, editingQuestionIndex - 1);
+                    persistQuizData();
+                    refreshCreatorView();
+                    showToast("ลบคำถามเรียบร้อยแล้ว", "info");
+                }
+            );
+        }
+
+        function resetToSampleQuiz() {
+            showConfirmModal(
+                "โหลดชุดข้อสอบตัวอย่าง?",
+                "ข้อมูลข้อสอบที่คุณแก้ไขอยู่จะถูกแทนที่ด้วยข้อสอบตัวอย่างเริ่มต้น",
+                () => {
+                    quizData = JSON.parse(JSON.stringify(defaultQuizData));
+                    editingQuestionIndex = 0;
+                    persistQuizData();
+                    refreshCreatorView();
+                    showToast("โหลดข้อสอบตัวอย่างเรียบร้อยแล้ว", "success");
+                }
+            );
+        }
+
+        function exportQuizJSON() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(quizData, null, 2));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", "eduquiz_backup.json");
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+            showToast("ส่งออกไฟล์ชุดข้อสอบ (.json) สำเร็จ", "success");
+        }
+
+        function importQuizJSON(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const imported = JSON.parse(e.target.result);
+                    if (imported && Array.isArray(imported.questions)) {
+                        if (typeof imported.allowReview === 'undefined') {
+                            imported.allowReview = true;
+                        }
+                        if (!imported.googleSheetUrl) {
+                            imported.googleSheetUrl = getActiveGoogleSheetUrl();
+                        }
+                        quizData = imported;
+                        editingQuestionIndex = 0;
+                        persistQuizData();
+                        refreshCreatorView();
+                        showToast("นำเข้าและบันทึกชุดข้อสอบถาวรสำเร็จ!", "success");
+                    } else {
+                        showToast("รูปแบบไฟล์ไม่ถูกต้อง", "error");
+                    }
+                } catch (err) {
+                    showToast("ไม่สามารถอ่านไฟล์ JSON ได้", "error");
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        /* ==========================================================================
+           6. LIVE QUIZ GAMEPLAY & TIMER LOGIC
+           ========================================================================== */
+        function recalculatePlayerTotals() {
+            let totalScore = 0;
+            let totalCorrect = 0;
+            currentPlayer.answersHistory.forEach(item => {
+                if (item) {
+                    totalScore += item.pointsEarned;
+                    if (item.isCorrect) totalCorrect++;
+                }
+            });
+            currentPlayer.score = totalScore;
+            currentPlayer.correctCount = totalCorrect;
+        }
+
+        function loadQuestion(index) {
+            const q = quizData.questions[index];
+            gameState.currentQuestionIdx = index;
+            gameState.timeLeft = q.timeLimit;
+            gameState.isTransitioning = false;
+
+            document.getElementById('game-q-current').textContent = index + 1;
+            document.getElementById('game-q-total').textContent = quizData.questions.length;
+
+            const topPrevBtn = document.getElementById('game-prev-btn');
+            const bottomPrevBtn = document.getElementById('game-bottom-prev-btn');
+            if (index > 0) {
+                topPrevBtn.classList.remove('hidden');
+                bottomPrevBtn.disabled = false;
+            } else {
+                topPrevBtn.classList.add('hidden');
+                bottomPrevBtn.disabled = true;
+            }
+
+            document.getElementById('game-question-text').textContent = q.text;
+            const mediaContainer = document.getElementById('game-media-container');
+            if (q.mediaType !== 'none' && q.mediaUrl) {
+                mediaContainer.innerHTML = renderMediaHTML(q.mediaType, q.mediaUrl, true);
+                mediaContainer.classList.remove('hidden');
+            } else {
+                mediaContainer.innerHTML = '';
+                mediaContainer.classList.add('hidden');
+            }
+
+            const existingAnswer = currentPlayer.answersHistory[index];
+            const isTrueFalse = (q.type || 'multiple') === 'true_false';
+
+            for (let i = 0; i < 4; i++) {
+                const btn = document.getElementById(`game-opt-btn-${i}`);
+                const textEl = document.getElementById(`game-opt-text-${i}`);
+                const statusEl = document.getElementById(`game-opt-status-${i}`);
+
+                if (isTrueFalse && i >= 2) {
+                    btn.classList.add('hidden');
+                    continue;
+                } else {
+                    btn.classList.remove('hidden');
+                }
+
+                if (isTrueFalse) {
+                    btn.classList.add('min-h-[100px]', 'sm:min-h-[130px]');
+                } else {
+                    btn.classList.remove('min-h-[100px]', 'sm:min-h-[130px]');
+                }
+
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'ring-4', 'ring-white', 'scale-[1.02]');
+                textEl.textContent = q.options[i] || (isTrueFalse ? (i === 0 ? "ถูก (True)" : "ผิด (False)") : `ตัวเลือก ${i + 1}`);
+                statusEl.classList.add('hidden');
+                statusEl.innerHTML = '';
+
+                if (existingAnswer && existingAnswer.selectedIndex === i) {
+                    btn.classList.add('ring-4', 'ring-white', 'scale-[1.02]');
+                    statusEl.innerHTML = '<i class="fa-solid fa-check-circle text-white"></i>';
+                    statusEl.classList.remove('hidden');
+                }
+            }
+
+            const nextBtn = document.getElementById('game-next-btn');
+            if (index === quizData.questions.length - 1) {
+                nextBtn.innerHTML = '<span>ส่งคำตอบและดูคะแนนรวม</span><i class="fa-solid fa-trophy text-amber-300"></i>';
+            } else {
+                nextBtn.innerHTML = existingAnswer 
+                    ? '<span>ไปข้อถัดไป</span><i class="fa-solid fa-arrow-right"></i>' 
+                    : '<span>ข้ามไปข้อถัดไป</span><i class="fa-solid fa-arrow-right"></i>';
+            }
+
+            startQuestionTimer(q.timeLimit);
+        }
+
+        function startQuestionTimer(seconds) {
+            if (gameState.timerInterval) clearInterval(gameState.timerInterval);
+
+            const timerCircle = document.getElementById('game-timer-circle');
+            timerCircle.textContent = gameState.timeLeft;
+            timerCircle.classList.remove('timer-urgent');
+
+            gameState.timerInterval = setInterval(() => {
+                gameState.timeLeft--;
+                timerCircle.textContent = Math.max(0, gameState.timeLeft);
+
+                if (gameState.timeLeft <= 5 && gameState.timeLeft > 0) {
+                    timerCircle.classList.add('timer-urgent');
+                    playSound('tick');
+                }
+
+                if (gameState.timeLeft <= 0) {
+                    clearInterval(gameState.timerInterval);
+                    handleTimeOut();
+                }
+            }, 1000);
+        }
+
+        function handleTimeOut() {
+            if (gameState.isTransitioning) return;
+            const existingAnswer = currentPlayer.answersHistory[gameState.currentQuestionIdx];
+            if (existingAnswer && existingAnswer.selectedIndex !== -1) {
+                nextQuestion();
+            } else {
+                submitAnswer(-1);
+            }
+        }
+
+        function submitAnswer(selectedIndex) {
+            if (gameState.isTransitioning) return;
+            gameState.isTransitioning = true;
+            clearInterval(gameState.timerInterval);
+
+            const idx = gameState.currentQuestionIdx;
+            const q = quizData.questions[idx];
+            const isCorrect = selectedIndex === q.correctIndex;
+            const isTimeout = selectedIndex === -1;
+
+            let pointsEarned = 0;
+            if (isCorrect) {
+                const maxPts = Number(q.points) || 0;
+                const timeRatio = Math.max(0, gameState.timeLeft / q.timeLimit);
+                pointsEarned = Math.round(maxPts * (0.5 + 0.5 * timeRatio));
+            }
+
+            if (isTimeout) {
+                playSound('wrong');
+                showToast("หมดเวลา! ระบบบันทึกว่าไม่ได้ตอบข้อนี้", "warning");
+            } else {
+                playSound('click');
+            }
+
+            currentPlayer.answersHistory[idx] = {
+                selectedIndex: selectedIndex,
+                questionText: q.text,
+                selectedText: isTimeout ? "หมดเวลา (ไม่ได้ตอบ)" : q.options[selectedIndex],
+                correctText: q.options[q.correctIndex],
+                isCorrect: isCorrect,
+                explanation: q.explanation || "ไม่มีคำอธิบายเพิ่มเติม",
+                pointsEarned: pointsEarned
+            };
+
+            recalculatePlayerTotals();
+
+            const isTrueFalse = (q.type || 'multiple') === 'true_false';
+            const optionCount = isTrueFalse ? 2 : 4;
+            for (let i = 0; i < optionCount; i++) {
+                const btn = document.getElementById(`game-opt-btn-${i}`);
+                const statusEl = document.getElementById(`game-opt-status-${i}`);
+                btn.disabled = true;
+
+                if (i === selectedIndex) {
+                    btn.classList.add('ring-4', 'ring-white', 'scale-[1.02]');
+                    statusEl.innerHTML = '<i class="fa-solid fa-check-circle text-white"></i>';
+                    statusEl.classList.remove('hidden');
+                } else {
+                    btn.classList.add('opacity-50');
+                }
+            }
+
+            setTimeout(() => {
+                nextQuestion();
+            }, 250);
+        }
+
+        function prevQuestion() {
+            if (gameState.currentQuestionIdx > 0) {
+                playSound('click');
+                clearInterval(gameState.timerInterval);
+                loadQuestion(gameState.currentQuestionIdx - 1);
+            }
+        }
+
+        function nextQuestion() {
+            clearInterval(gameState.timerInterval);
+            const idx = gameState.currentQuestionIdx;
+            const q = quizData.questions[idx];
+
+            if (!currentPlayer.answersHistory[idx]) {
+                currentPlayer.answersHistory[idx] = {
+                    selectedIndex: -1,
+                    questionText: q.text,
+                    selectedText: "ไม่ได้ตอบ (ข้ามข้อ)",
+                    correctText: q.options[q.correctIndex],
+                    isCorrect: false,
+                    explanation: q.explanation || "ไม่มีคำอธิบายเพิ่มเติม",
+                    pointsEarned: 0
+                };
+                recalculatePlayerTotals();
+            }
+
+            const nextIdx = idx + 1;
+            if (nextIdx < quizData.questions.length) {
+                loadQuestion(nextIdx);
+            } else {
+                finishQuizAndShowResults();
+            }
+        }
+
+        /* ==========================================================================
+           7. FINAL SCORE SUMMARY & LEADERBOARD LOGIC
+           ========================================================================== */
+        async function finishQuizAndShowResults() {
+            playSound('finish');
+
+            const newRecord = {
+                name: currentPlayer.name,
+                department: currentPlayer.department,
+                score: currentPlayer.score,
+                correct: currentPlayer.correctCount,
+                total: quizData.questions.length,
+                timestamp: Date.now()
+            };
+
+            leaderboardData.push(newRecord);
+            leaderboardData.sort((a, b) => b.score - a.score);
+            persistLeaderboardData();
+
+            sendScoreToGoogleSheet({
+                ...newRecord,
+                quizTitle: quizData.title
+            }).then(ok => {
+                if (ok) {
+                    showToast("บันทึกคะแนนลง Google Sheets เรียบร้อยแล้ว!", "success");
+                }
+            });
+
+            const personalCard = document.getElementById('personal-result-card');
+            personalCard.classList.remove('hidden');
+
+            document.getElementById('result-player-name').textContent = currentPlayer.name;
+            document.getElementById('result-player-dept').textContent = `แผนก/ฝ่าย: ${currentPlayer.department}`;
+            document.getElementById('result-total-score').textContent = currentPlayer.score.toLocaleString();
+            document.getElementById('result-correct-count').textContent = `${currentPlayer.correctCount}/${quizData.questions.length}`;
+            
+            const accuracyPct = Math.round((currentPlayer.correctCount / quizData.questions.length) * 100);
+            document.getElementById('result-accuracy').textContent = `${accuracyPct}%`;
+
+            const toggleReviewBtn = document.getElementById('btn-toggle-review-answers');
+            const disabledNotice = document.getElementById('review-disabled-notice');
+            const reviewList = document.getElementById('detailed-review-list');
+            
+            reviewList.classList.add('hidden');
+            document.getElementById('btn-toggle-review-text').textContent = "กดดูเฉลยและคำอธิบายรายข้อ";
+
+            if (quizData.allowReview !== false) {
+                toggleReviewBtn.classList.remove('hidden');
+                disabledNotice.classList.add('hidden');
+                renderDetailedReviewList();
+            } else {
+                toggleReviewBtn.classList.add('hidden');
+                disabledNotice.classList.remove('hidden');
+                reviewList.innerHTML = '';
+            }
+
+            switchView('leaderboard');
+
+            if (accuracyPct >= 50 && typeof confetti === 'function') {
+                confetti({
+                    particleCount: 100,
+                    spread: 70,
+                    origin: { y: 0.6 }
+                });
+            }
+        }
+
+        function renderDetailedReviewList() {
+            const container = document.getElementById('detailed-review-list');
+            container.innerHTML = '';
+
+            currentPlayer.answersHistory.forEach((item, idx) => {
+                const div = document.createElement('div');
+                div.className = `p-4 rounded-2xl border ${item.isCorrect ? 'bg-emerald-50/60 border-emerald-200' : 'bg-red-50/60 border-red-200'}`;
+                div.innerHTML = `
+                    <div class="flex items-start justify-between gap-2 mb-1">
+                        <span class="font-bold text-gray-900 text-sm">ข้อ ${idx + 1}: ${item.questionText}</span>
+                        <span class="shrink-0 text-xs font-extrabold px-2.5 py-0.5 rounded-full ${item.isCorrect ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}">
+                            ${item.isCorrect ? `+${item.pointsEarned} คะแนน` : 'ผิด'}
+                        </span>
+                    </div>
+                    <div class="text-xs sm:text-sm space-y-1 mt-2">
+                        <p class="${item.isCorrect ? 'text-emerald-800' : 'text-red-700'}">
+                            <strong>คำตอบของคุณ:</strong> ${item.selectedText}
+                        </p>
+                        ${!item.isCorrect ? `<p class="text-emerald-800"><strong>คำตอบที่ถูกต้อง:</strong> ${item.correctText}</p>` : ''}
+                        <p class="text-gray-600 bg-white/80 p-2 rounded-lg mt-1">
+                            <i class="fa-solid fa-lightbulb text-amber-500 mr-1"></i> ${item.explanation}
+                        </p>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function toggleReviewAnswers() {
+            if (quizData.allowReview === false) return;
+            const list = document.getElementById('detailed-review-list');
+            const btnText = document.getElementById('btn-toggle-review-text');
+            list.classList.toggle('hidden');
+            
+            if (list.classList.contains('hidden')) {
+                btnText.textContent = "กดดูเฉลยและคำอธิบายรายข้อ";
+            } else {
+                btnText.textContent = "ซ่อนเฉลยรายข้อ";
+            }
+        }
+
+        function renderLeaderboardTable() {
+            const tbody = document.getElementById('leaderboard-tbody');
+            const emptyMsg = document.getElementById('empty-leaderboard-msg');
+            tbody.innerHTML = '';
+
+            if (leaderboardData.length === 0) {
+                emptyMsg.classList.remove('hidden');
+                return;
+            }
+            emptyMsg.classList.add('hidden');
+
+            leaderboardData.sort((a, b) => b.score - a.score);
+
+            leaderboardData.forEach((entry, idx) => {
+                const isCurrentPlayer = entry.name === currentPlayer.name && entry.department === currentPlayer.department && entry.score === currentPlayer.score;
+                
+                let rankBadge = `<span class="w-8 h-8 rounded-full bg-gray-100 text-gray-700 font-bold inline-flex items-center justify-center text-sm">${idx + 1}</span>`;
+                if (idx === 0) rankBadge = `<span class="w-8 h-8 rounded-full bg-amber-400 text-amber-950 font-extrabold inline-flex items-center justify-center shadow-sm"><i class="fa-solid fa-crown"></i></span>`;
+                else if (idx === 1) rankBadge = `<span class="w-8 h-8 rounded-full bg-gray-300 text-gray-800 font-extrabold inline-flex items-center justify-center">2</span>`;
+                else if (idx === 2) rankBadge = `<span class="w-8 h-8 rounded-full bg-amber-600/80 text-white font-extrabold inline-flex items-center justify-center">3</span>`;
+
+                const tr = document.createElement('tr');
+                tr.className = isCurrentPlayer ? 'bg-purple-50/90 font-semibold' : 'hover:bg-gray-50 transition';
+                tr.innerHTML = `
+                    <td class="py-3.5 px-4">${rankBadge}</td>
+                    <td class="py-3.5 px-4 text-gray-900 font-bold">
+                        ${entry.name}
+                        ${isCurrentPlayer ? '<span class="ml-2 text-xs bg-purple-700 text-white px-2 py-0.5 rounded-full">คุณ</span>' : ''}
+                    </td>
+                    <td class="py-3.5 px-4 text-gray-600">${entry.department}</td>
+                    <td class="py-3.5 px-4 text-center">
+                        <span class="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-bold text-xs">
+                            ${entry.correct}/${entry.total} ข้อ
+                        </span>
+                    </td>
+                    <td class="py-3.5 px-4 text-right font-extrabold text-purple-800 text-base sm:text-lg">
+                        ${entry.score.toLocaleString()}
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function exportLeaderboardCSV() {
+            if (leaderboardData.length === 0) {
+                showToast("ไม่มีข้อมูลคะแนนสำหรับส่งออก", "warning");
+                return;
+            }
+            let csvContent = "\uFEFFอันดับ,ชื่อ-นามสกุล,แผนก/ฝ่าย,จำนวนข้อที่ถูก,จำนวนข้อทั้งหมด,คะแนนรวม\n";
+            leaderboardData.forEach((row, idx) => {
+                csvContent += `${idx + 1},"${row.name}","${row.department}",${row.correct},${row.total},${row.score}\n`;
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", "สรุปผลคะแนนแบบทดสอบ.csv");
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            showToast("ดาวน์โหลดไฟล์สรุปคะแนน (CSV) เรียบร้อยแล้ว", "success");
+        }
+
+        function clearLeaderboardConfirm() {
+            showConfirmModal(
+                "ล้างประวัติคะแนนทั้งหมด?",
+                "คุณต้องการลบรายชื่อและคะแนนของผู้เข้าทดสอบทั้งหมดออกจากตารางใช่หรือไม่?",
+                () => {
+                    leaderboardData = [];
+                    persistLeaderboardData();
+                    document.getElementById('personal-result-card').classList.add('hidden');
+                    renderLeaderboardTable();
+                    showToast("ล้างตารางคะแนนเรียบร้อยแล้ว", "info");
+                }
+            );
+        }
+
+        /* ==========================================================================
+           8. INITIALIZE ON WINDOW LOAD
+           ========================================================================== */
+        window.onload = function() {
+            refreshHomeView();
+            // Automatically fetch the latest quiz from Google Sheets on page load
+            fetchQuizFromGoogleSheets(false);
+        };
+    </script>
+</body>
+</html>
