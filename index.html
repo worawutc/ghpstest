@@ -569,6 +569,9 @@
                         <button type="button" onclick="fetchScoresFromGoogleSheets(true)" class="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition">
                             <i class="fa-solid fa-rotate mr-1"></i> ดึงคะแนนล่าสุด
                         </button>
+                        <button type="button" id="btn-delete-selected-scores" onclick="deleteSelectedScoresConfirm()" class="hidden px-3 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-sm transition">
+                            <i class="fa-solid fa-trash-can mr-1"></i> ลบรายการที่เลือก (<span id="selected-scores-count">0</span>)
+                        </button>
                         <button type="button" onclick="clearLeaderboardConfirm()" class="px-3 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold transition">
                             <i class="fa-solid fa-trash mr-1"></i> ลบทั้งหมด
                         </button>
@@ -579,6 +582,9 @@
                     <table class="w-full text-left border-collapse">
                         <thead>
                             <tr class="border-b-2 border-gray-200 text-xs font-extrabold text-gray-500 uppercase">
+                                <th class="py-3 px-3 w-10 text-center">
+                                    <input type="checkbox" id="creator-select-all-scores" onchange="toggleSelectAllCreatorScores(this.checked)" class="w-4 h-4 accent-purple-700 rounded cursor-pointer" title="เลือกทั้งหมด">
+                                </th>
                                 <th class="py-3 px-3">ชื่อ-นามสกุล</th>
                                 <th class="py-3 px-3">แผนก</th>
                                 <th class="py-3 px-3">ชุดแบบทดสอบ</th>
@@ -794,7 +800,7 @@
         // ==========================================
         // 1. DEFAULT DATA & CONFIGURATION
         // ==========================================
-        const DEFAULT_GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbz89h-gL6lT2d3gQ4hL0H3m_K9wP1xZ8vR4nB6yC2jM5tS7qW0eD9fG1hJ3kL5pA8s/exec";
+        const DEFAULT_GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbw_ceM9sfZfHoOvqEYyax2s1kNmKi7YycEJgA4WaAn9bH1dGRW1clhHAH0WJRE0ROhwLg/exec";
         const TEACHER_PASSCODE = "ptukja";
 
         const STORAGE_KEY_QUIZZES = "ghps_quiz_sets_v3";
@@ -1761,8 +1767,9 @@
 
         function deleteScoreRecord(index) {
             if (index < 0 || index >= leaderboardData.length) return;
-            const targetRecord = leaderboardData[index];
+            const targetRecord = Object.assign({}, leaderboardData[index]);
             openConfirmModal("ลบรายการผลคะแนน", `ต้องการลบผลคะแนนของ "${targetRecord.name}" ออกจากทั้งหน้าเว็บและ Google Sheets ใช่หรือไม่?`, async () => {
+                // ลบออกจากหน้าเว็บทันทีเพื่อให้ตอบสนองไว
                 leaderboardData.splice(index, 1);
                 persistLeaderboardData();
                 populateLeaderboardQuizFilter();
@@ -1778,69 +1785,727 @@
             });
         }
 
+        async function deleteScoreFromGoogleSheet(record) {
+            const url = getActiveGoogleSheetUrl();
+            if (!url || !record) return;
+
+            showToast(`กำลังลบข้อมูลของ "${record.name}" ใน Google Sheets...`, "info");
+            try {
+                const separator = url.includes('?') ? '&' : '?';
+                const params = new URLSearchParams({
+                    action: "delete_score",
+                    rowNumber: record.rowNumber ? String(record.rowNumber) : "",
+                    name: record.name || "",
+                    department: record.department || "",
+                    score: record.score !== undefined ? String(record.score) : "",
+                    quizTitle: record.quizTitle || "",
+                    _t: String(Date.now())
+                });
+
+                const res = await fetch(`${url}${separator}${params.toString()}`, {
+                    method: 'GET',
+                    redirect: 'follow'
+                });
+                const result = await res.json();
+                if (result && result.result === "score_deleted") {
+                    playSound('correct');
+                    showToast(`ลบข้อมูลของ "${record.name}" ใน Google Sheets เรียบร้อยแล้ว!`, "success");
+                } else {
+                    showToast("ลบในหน้าเว็บแล้ว (ไม่พบแถวตรงกันใน Sheets หรือกรุณา Deploy Apps Script เป็น New version)", "warning");
+                }
+                await fetchScoresFromGoogleSheets(false);
+            } catch (err) {
+                try {
+                    await fetch(url, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({
+                            action: "delete_score",
+                            name: record.name,
+                            department: record.department,
+                            score: record.score,
+                            quizTitle: record.quizTitle
+                        })
+                    });
+                    showToast("ส่งคำสั่งลบไปยัง Google Sheets แล้ว!", "success");
+                    setTimeout(() => fetchScoresFromGoogleSheets(false), 1200);
+                } catch (e2) {
+                    showToast("ลบในหน้าเว็บแล้ว แต่ไม่สามารถเชื่อมต่อ Google Sheets ได้", "warning");
+                }
+            }
+        }
+
         function clearLeaderboardConfirm() {
             if (!isTeacherAuthenticated) {
-                showToast("กรุณาเข้าสู่โหมดผู้สอนก่อนล้างประวัติคะแนน", "warning");
+                showToast("เฉพาะผู้สอนเท่านั้นที่สามารถล้างข้อมูลคะแนนทั้งหมดได้", "warning");
                 requestTeacherMode();
                 return;
             }
-            openConfirmModal("ล้างประวัติคะแนนทั้งหมด", "คุณแน่ใจหรือไม่ว่าต้องการล้างรายการคะแนนทั้งหมดออกจากทั้งหน้าเว็บและ Google Sheets?", async () => {
-                leaderboardData = [];
-                persistLeaderboardData();
-                populateLeaderboardQuizFilter();
-                renderLeaderboardTable();
-                if (!document.getElementById('view-creator').classList.contains('hidden')) {
-                    populateCreatorScoreFilter();
-                    renderCreatorScoresTable();
-                }
-                const totalPlayersEl = document.getElementById('total-players-count');
-                if (totalPlayersEl) totalPlayersEl.textContent = "0";
+            openConfirmModal(
+                "ล้างข้อมูลคะแนนทั้งหมด",
+                "คุณแน่ใจหรือไม่ที่จะลบผลคะแนนผู้เข้าสอบทั้งหมดออกจากทั้งหน้าเว็บและ Google Sheets?",
+                async () => {
+                    leaderboardData = [];
+                    persistLeaderboardData();
+                    populateLeaderboardQuizFilter();
+                    renderLeaderboardTable();
+                    if (!document.getElementById('view-creator').classList.contains('hidden')) {
+                        populateCreatorScoreFilter();
+                        renderCreatorScoresTable();
+                    }
+                    const totalPlayersEl = document.getElementById('total-players-count');
+                    if (totalPlayersEl) totalPlayersEl.textContent = "0";
 
-                await clearAllScoresInGoogleSheet();
-            });
+                    await clearAllScoresInGoogleSheet();
+                }
+            );
         }
 
-        async function deleteScoreFromGoogleSheet(record) {
+        function toggleSelectAllCreatorScores(isChecked) {
+            const checkboxes = document.querySelectorAll('.creator-score-checkbox');
+            checkboxes.forEach(cb => {
+                cb.checked = isChecked;
+            });
+            updateSelectedScoresToolbar();
+        }
+
+        function updateSelectedScoresToolbar() {
+            const checkboxes = document.querySelectorAll('.creator-score-checkbox');
+            const checkedBoxes = document.querySelectorAll('.creator-score-checkbox:checked');
+            const selectAllCb = document.getElementById('creator-select-all-scores');
+            const bulkDeleteBtn = document.getElementById('btn-delete-selected-scores');
+            const countSpan = document.getElementById('selected-scores-count');
+
+            if (selectAllCb) {
+                selectAllCb.checked = checkboxes.length > 0 && checkedBoxes.length === checkboxes.length;
+                selectAllCb.indeterminate = checkedBoxes.length > 0 && checkedBoxes.length < checkboxes.length;
+            }
+
+            if (bulkDeleteBtn && countSpan) {
+                if (checkedBoxes.length > 0) {
+                    countSpan.textContent = checkedBoxes.length;
+                    bulkDeleteBtn.classList.remove('hidden');
+                } else {
+                    bulkDeleteBtn.classList.add('hidden');
+                }
+            }
+        }
+
+        function deleteSelectedScoresConfirm() {
+            const checkedBoxes = Array.from(document.querySelectorAll('.creator-score-checkbox:checked'));
+            if (checkedBoxes.length === 0) {
+                showToast("กรุณาติ๊กเลือกรายการที่ต้องการลบก่อน", "warning");
+                return;
+            }
+
+            const selectedIndices = checkedBoxes
+                .map(cb => Number(cb.getAttribute('data-orig-idx')))
+                .filter(idx => !isNaN(idx) && idx >= 0 && idx < leaderboardData.length)
+                .sort((a, b) => b - a); // เรียงจากมากไปน้อยเพื่อไม่ให้ index เคลื่อนตอนลบ
+
+            const selectedRecords = selectedIndices.map(idx => Object.assign({}, leaderboardData[idx]));
+
+            openConfirmModal(
+                `ลบรายการที่เลือก (${selectedRecords.length} รายการ)`,
+                `คุณต้องการลบผลคะแนนที่เลือกทั้งหมด ${selectedRecords.length} รายการ ออกจากทั้งหน้าเว็บและ Google Sheets ใช่หรือไม่?`,
+                async () => {
+                    // ลบออกจากหน้าเว็บทันที
+                    selectedIndices.forEach(idx => {
+                        leaderboardData.splice(idx, 1);
+                    });
+                    persistLeaderboardData();
+                    populateLeaderboardQuizFilter();
+                    renderLeaderboardTable();
+                    populateCreatorScoreFilter();
+                    renderCreatorScoresTable();
+
+                    const totalPlayersEl = document.getElementById('total-players-count');
+                    if (totalPlayersEl) totalPlayersEl.textContent = leaderboardData.length;
+
+                    await deleteMultipleScoresFromGoogleSheet(selectedRecords);
+                }
+            );
+        }
+
+        async function deleteMultipleScoresFromGoogleSheet(records) {
             const url = getActiveGoogleSheetUrl();
-            if (!url) return;
+            if (!url || !records || records.length === 0) return;
+
+            showToast(`กำลังลบข้อมูล ${records.length} รายการใน Google Sheets...`, "info");
             try {
-                await fetch(url, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({
-                        action: "delete_score",
-                        name: record.name,
-                        department: record.department,
-                        score: record.score,
-                        quizTitle: record.quizTitle
-                    })
+                const separator = url.includes('?') ? '&' : '?';
+                const payload = records.map(r => ({
+                    rowNumber: r.rowNumber || "",
+                    name: r.name || "",
+                    department: r.department || "",
+                    score: r.score !== undefined ? r.score : "",
+                    quizTitle: r.quizTitle || ""
+                }));
+
+                const params = new URLSearchParams({
+                    action: "delete_multiple_scores",
+                    items: JSON.stringify(payload),
+                    _t: String(Date.now())
                 });
-                showToast("ลบรายการคะแนนใน Google Sheets เรียบร้อยแล้ว!", "success");
-                setTimeout(() => fetchScoresFromGoogleSheets(false), 1200);
+
+                const res = await fetch(`${url}${separator}${params.toString()}`, {
+                    method: 'GET',
+                    redirect: 'follow'
+                });
+                const result = await res.json();
+                if (result && result.result === "multiple_scores_deleted") {
+                    playSound('correct');
+                    showToast(`ลบข้อมูล ${result.deletedCount || records.length} รายการใน Google Sheets เรียบร้อยแล้ว!`, "success");
+                } else {
+                    showToast("กรุณาอัปเดต Apps Script เป็น New version เพื่อให้ลบหลายรายการใน Sheets ได้", "warning");
+                }
+                await fetchScoresFromGoogleSheets(false);
             } catch (err) {
-                showToast("ลบในหน้าเว็บแล้ว แต่ไม่สามารถเชื่อมต่อ Google Sheets ได้", "warning");
+                // Fallback ส่งทีละรายการหาก URL ยาวเกินไป
+                let deletedSuccess = 0;
+                for (const rec of records) {
+                    try {
+                        const sep = url.includes('?') ? '&' : '?';
+                        const p = new URLSearchParams({
+                            action: "delete_score",
+                            rowNumber: rec.rowNumber ? String(rec.rowNumber) : "",
+                            name: rec.name || "",
+                            department: rec.department || "",
+                            score: rec.score !== undefined ? String(rec.score) : "",
+                            quizTitle: rec.quizTitle || "",
+                            _t: String(Date.now())
+                        });
+                        await fetch(`${url}${sep}${p.toString()}`, { method: 'GET', redirect: 'follow' });
+                        deletedSuccess++;
+                    } catch (e2) {}
+                }
+                if (deletedSuccess > 0) {
+                    playSound('correct');
+                    showToast(`ลบข้อมูล ${deletedSuccess} รายการใน Google Sheets เรียบร้อยแล้ว!`, "success");
+                }
+                await fetchScoresFromGoogleSheets(false);
             }
         }
 
         async function clearAllScoresInGoogleSheet() {
             const url = getActiveGoogleSheetUrl();
             if (!url) return;
+            showToast("กำลังล้างข้อมูลคะแนนทั้งหมดใน Google Sheets...", "info");
             try {
-                await fetch(url, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({
-                        action: "clear_scores"
-                    })
+                const separator = url.includes('?') ? '&' : '?';
+                const res = await fetch(`${url}${separator}action=clear_scores&_t=${Date.now()}`, {
+                    method: 'GET',
+                    redirect: 'follow'
                 });
-                showToast("ล้างข้อมูลคะแนนทั้งหมดใน Google Sheets เรียบร้อยแล้ว!", "success");
-                setTimeout(() => fetchScoresFromGoogleSheets(false), 1200);
+                const result = await res.json();
+                if (result && result.result === "scores_cleared") {
+                    playSound('correct');
+                    showToast("ล้างข้อมูลคะแนนทั้งหมดใน Google Sheets เรียบร้อยแล้ว!", "success");
+                } else {
+                    showToast("กรุณาอัปเดต Apps Script เป็น New version เพื่อให้ล้างข้อมูลใน Sheets ได้", "warning");
+                }
+                await fetchScoresFromGoogleSheets(false);
             } catch (err) {
-                showToast("ล้างในหน้าเว็บแล้ว แต่ไม่สามารถเชื่อมต่อ Google Sheets ได้", "warning");
+                try {
+                    await fetch(url, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({ action: "clear_scores" })
+                    });
+                    showToast("ส่งคำสั่งล้างข้อมูลไปยัง Google Sheets แล้ว!", "success");
+                    setTimeout(() => fetchScoresFromGoogleSheets(false), 1200);
+                } catch (e2) {
+                    showToast("ล้างในหน้าเว็บแล้ว แต่ไม่สามารถเชื่อมต่อ Google Sheets ได้", "warning");
+                }
             }
         }
 
         function exportLeaderboardCSV() {
-// ... existing code ... -->
+            if (!leaderboardData || leaderboardData.length === 0) {
+                showToast("ไม่มีข้อมูลคะแนนสำหรับส่งออก", "warning");
+                return;
+            }
+            const headers = ["อันดับ", "ชื่อ-นามสกุล", "แผนก/ฝ่าย", "หัวข้อแบบทดสอบ", "ตอบถูก", "ทั้งหมด", "คะแนนรวม", "วัน-เวลาที่ส่ง"];
+            const sorted = leaderboardData.slice().sort((a, b) => b.score - a.score);
+            const rows = sorted.map((r, i) => [
+                i + 1,
+                `"${String(r.name || '').replace(/"/g, '""')}"`,
+                `"${String(r.department || '').replace(/"/g, '""')}"`,
+                `"${String(r.quizTitle || '').replace(/"/g, '""')}"`,
+                r.correct,
+                r.total,
+                r.score,
+                `"${r.timestamp ? new Date(r.timestamp).toLocaleString('th-TH') : ''}"`
+            ]);
+
+            const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+            const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `GHPs_Scores_${new Date().toISOString().slice(0, 10)}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast("ดาวน์โหลดไฟล์ CSV เรียบร้อยแล้ว", "success");
+        }
+
+        // ==========================================
+        // 9. INSTRUCTOR CREATOR STUDIO LOGIC
+        // ==========================================
+        function refreshCreatorStudio() {
+            const activeQuiz = getActiveQuiz();
+            if (!activeQuiz) return;
+
+            const urlInput = document.getElementById('creator-sheet-url');
+            if (urlInput) urlInput.value = getActiveGoogleSheetUrl();
+
+            const titleInput = document.getElementById('creator-quiz-title');
+            const descInput = document.getElementById('creator-quiz-desc');
+            const expCheck = document.getElementById('creator-show-explanation');
+            if (titleInput) titleInput.value = activeQuiz.title || "";
+            if (descInput) descInput.value = activeQuiz.description || "";
+            if (expCheck) expCheck.checked = activeQuiz.showExplanation !== false;
+
+            const shareInput = document.getElementById('creator-share-link-input');
+            if (shareInput) shareInput.value = buildShareableQuizUrl(activeQuiz.id);
+
+            renderCreatorAllQuizzesList();
+            selectedEditorQuestionIndex = Math.min(selectedEditorQuestionIndex, Math.max(0, activeQuiz.questions.length - 1));
+            renderQuestionListSidebar();
+            loadQuestionIntoEditor(selectedEditorQuestionIndex);
+            populateCreatorScoreFilter();
+            renderCreatorScoresTable();
+        }
+
+        function buildShareableQuizUrl(quizId) {
+            try {
+                const baseUrl = window.location.href.split('?')[0].split('#')[0];
+                const sheetUrl = getActiveGoogleSheetUrl();
+                const params = new URLSearchParams();
+                params.set('quizId', quizId);
+                if (sheetUrl && sheetUrl !== DEFAULT_GOOGLE_SHEET_URL) {
+                    params.set('sheet', sheetUrl);
+                }
+                return `${baseUrl}?${params.toString()}`;
+            } catch (e) {
+                return `?quizId=${encodeURIComponent(quizId)}`;
+            }
+        }
+
+        function copyTextFallback(text, successMsg) {
+            const temp = document.createElement('textarea');
+            temp.value = text;
+            temp.style.position = 'fixed';
+            temp.style.opacity = '0';
+            document.body.appendChild(temp);
+            temp.select();
+            try {
+                document.execCommand('copy');
+                showToast(successMsg, "success");
+            } catch (e) {
+                showToast("ไม่สามารถคัดลอกอัตโนมัติได้ กรุณาคัดลอกจากช่องข้อความ", "warning");
+            }
+            document.body.removeChild(temp);
+        }
+
+        function copyShareQuizLink() {
+            const activeQuiz = getActiveQuiz();
+            if (!activeQuiz) return;
+            const link = buildShareableQuizUrl(activeQuiz.id);
+            copyTextFallback(link, `คัดลอกลิงก์ "${activeQuiz.title}" เรียบร้อยแล้ว!`);
+        }
+
+        function copySpecificQuizLink(quizId, event) {
+            if (event) event.stopPropagation();
+            const q = quizSets.find(item => item.id === quizId);
+            if (!q) return;
+            const link = buildShareableQuizUrl(quizId);
+            copyTextFallback(link, `คัดลอกลิงก์ "${q.title}" เรียบร้อยแล้ว!`);
+        }
+
+        function renderCreatorAllQuizzesList() {
+            const container = document.getElementById('creator-all-quizzes-list');
+            if (!container) return;
+
+            container.innerHTML = quizSets.map((quiz, idx) => {
+                const isSelected = quiz.id === activeQuizId;
+                return `
+                    <div onclick="selectQuizSetToEdit('${escapeHtml(quiz.id)}')"
+                        class="cursor-pointer p-4 rounded-2xl border-2 transition flex items-start justify-between gap-3 ${isSelected ? 'border-purple-600 bg-purple-50/70 shadow-sm' : 'border-gray-200 hover:border-purple-300 bg-white'}">
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-2 mb-1">
+                                <span class="px-2 py-0.5 rounded-md text-[11px] font-extrabold ${isSelected ? 'bg-purple-700 text-white' : 'bg-gray-200 text-gray-700'}">
+                                    ชุดที่ ${idx + 1}
+                                </span>
+                                ${isSelected ? '<span class="text-[11px] font-bold text-purple-700"><i class="fa-solid fa-pen-to-square mr-0.5"></i> กำลังแก้ไข</span>' : ''}
+                            </div>
+                            <h4 class="font-heading font-bold text-gray-900 text-sm truncate">${escapeHtml(quiz.title)}</h4>
+                            <p class="text-xs text-gray-500 truncate mt-0.5">${escapeHtml(quiz.description || 'ไม่มีคำอธิบาย')} • ${quiz.questions.length} ข้อ</p>
+                        </div>
+                        <button type="button" onclick="copySpecificQuizLink('${escapeHtml(quiz.id)}', event)"
+                            class="shrink-0 px-3 py-1.5 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-900 text-xs font-bold transition" title="คัดลอกลิงก์ชุดนี้ส่งให้ผู้เรียน">
+                            <i class="fa-regular fa-copy mr-1"></i> ลิงก์
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function selectQuizSetToEdit(quizId) {
+            activeQuizId = quizId;
+            persistActiveQuizId();
+            selectedEditorQuestionIndex = 0;
+            refreshCreatorStudio();
+        }
+
+        function createNewQuizSet() {
+            const nextNum = quizSets.length + 1;
+            const newQuiz = {
+                id: "quiz-stage-" + Date.now(),
+                title: `ช่วงที่ ${nextNum}: แบบทดสอบเรื่องใหม่`,
+                description: `แบบทดสอบทบทวนความเข้าใจช่วงที่ ${nextNum}`,
+                showExplanation: true,
+                googleSheetUrl: getActiveGoogleSheetUrl(),
+                questions: [
+                    {
+                        id: "q-" + Date.now(),
+                        type: "multiple",
+                        text: "พิมพ์คำถามข้อที่ 1 ที่นี่...",
+                        timeLimit: 20,
+                        points: 10,
+                        mediaType: "none",
+                        mediaUrl: "",
+                        options: ["ตัวเลือกที่ 1", "ตัวเลือกที่ 2", "ตัวเลือกที่ 3", "ตัวเลือกที่ 4"],
+                        correctIndex: 0,
+                        explanation: ""
+                    }
+                ]
+            };
+            quizSets.push(newQuiz);
+            activeQuizId = newQuiz.id;
+            selectedEditorQuestionIndex = 0;
+            persistQuizzes();
+            persistActiveQuizId();
+            refreshCreatorStudio();
+            showToast(`สร้าง "${newQuiz.title}" เรียบร้อยแล้ว`, "success");
+        }
+
+        function duplicateCurrentQuizSet() {
+            const current = getActiveQuiz();
+            if (!current) return;
+            const copy = JSON.parse(JSON.stringify(current));
+            copy.id = "quiz-copy-" + Date.now();
+            copy.title = current.title + " (สำเนา)";
+            quizSets.push(copy);
+            activeQuizId = copy.id;
+            selectedEditorQuestionIndex = 0;
+            persistQuizzes();
+            persistActiveQuizId();
+            refreshCreatorStudio();
+            showToast("คัดลอกชุดแบบทดสอบเรียบร้อยแล้ว", "success");
+        }
+
+        function deleteCurrentQuizSet() {
+            if (quizSets.length <= 1) {
+                showToast("ต้องมีชุดแบบทดสอบเหลืออย่างน้อย 1 ชุดในระบบ", "warning");
+                return;
+            }
+            const current = getActiveQuiz();
+            openConfirmModal("ลบชุดแบบทดสอบ", `คุณต้องการลบ "${current.title}" ใช่หรือไม่?`, () => {
+                quizSets = quizSets.filter(q => q.id !== current.id);
+                activeQuizId = quizSets[0].id;
+                selectedEditorQuestionIndex = 0;
+                persistQuizzes();
+                persistActiveQuizId();
+                refreshCreatorStudio();
+                showToast("ลบชุดแบบทดสอบเรียบร้อยแล้ว", "success");
+            });
+        }
+
+        function saveCustomGoogleSheetUrl() {
+            const val = document.getElementById('creator-sheet-url').value.trim();
+            if (!val || !val.startsWith('http')) {
+                showToast("กรุณากรอก URL ที่ขึ้นต้นด้วย https:// ให้ถูกต้อง", "warning");
+                return;
+            }
+            const activeQuiz = getActiveQuiz();
+            if (activeQuiz) activeQuiz.googleSheetUrl = val;
+            try {
+                localStorage.setItem(STORAGE_KEY_CUSTOM_SHEET_URL, val);
+            } catch (e) {}
+            persistQuizzes();
+            refreshCreatorStudio();
+            showToast("บันทึกลิงก์ Google Sheets ใหม่เรียบร้อยแล้ว!", "success");
+        }
+
+        function resetDefaultGoogleSheetUrl() {
+            const activeQuiz = getActiveQuiz();
+            if (activeQuiz) activeQuiz.googleSheetUrl = DEFAULT_GOOGLE_SHEET_URL;
+            try {
+                localStorage.removeItem(STORAGE_KEY_CUSTOM_SHEET_URL);
+            } catch (e) {}
+            persistQuizzes();
+            refreshCreatorStudio();
+            showToast("คืนค่าลิงก์ Google Sheets เริ่มต้นเรียบร้อยแล้ว", "info");
+        }
+
+        function saveQuizMetaDetails() {
+            const activeQuiz = getActiveQuiz();
+            if (!activeQuiz) return;
+            activeQuiz.title = document.getElementById('creator-quiz-title').value;
+            activeQuiz.description = document.getElementById('creator-quiz-desc').value;
+            activeQuiz.showExplanation = document.getElementById('creator-show-explanation').checked;
+            persistQuizzes();
+            renderCreatorAllQuizzesList();
+        }
+
+        function renderQuestionListSidebar() {
+            const activeQuiz = getActiveQuiz();
+            const container = document.getElementById('creator-question-list');
+            if (!activeQuiz || !container) return;
+
+            container.innerHTML = activeQuiz.questions.map((q, idx) => {
+                const isCurrent = idx === selectedEditorQuestionIndex;
+                return `
+                    <div onclick="selectQuestionToEdit(${idx})"
+                        class="cursor-pointer p-3 rounded-xl border transition ${isCurrent ? 'bg-purple-700 text-white border-purple-800 shadow-md' : 'bg-gray-50 hover:bg-purple-50 text-gray-800 border-gray-200'}">
+                        <div class="flex items-center justify-between text-xs mb-1">
+                            <span class="font-extrabold">ข้อที่ ${idx + 1}</span>
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${isCurrent ? 'bg-amber-400 text-purple-950' : 'bg-purple-100 text-purple-800'}">
+                                ${q.points || 10} คะแนน • ${q.timeLimit || 20} วิ
+                            </span>
+                        </div>
+                        <p class="text-xs truncate ${isCurrent ? 'text-purple-100' : 'text-gray-600'}">${escapeHtml(q.text || 'ยังไม่ได้พิมพ์คำถาม')}</p>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function selectQuestionToEdit(idx) {
+            selectedEditorQuestionIndex = idx;
+            renderQuestionListSidebar();
+            loadQuestionIntoEditor(idx);
+        }
+
+        function loadQuestionIntoEditor(idx) {
+            const activeQuiz = getActiveQuiz();
+            if (!activeQuiz || !activeQuiz.questions[idx]) return;
+            const q = activeQuiz.questions[idx];
+
+            document.getElementById('editor-q-number').textContent = `กำลังแก้ไขข้อที่ ${idx + 1} จาก ${activeQuiz.questions.length} ข้อ`;
+            document.getElementById('edit-q-type').value = q.type || "multiple";
+            document.getElementById('edit-q-time').value = String(q.timeLimit || 20);
+            document.getElementById('edit-q-points').value = q.points || 10;
+            document.getElementById('edit-q-text').value = q.text || "";
+            document.getElementById('edit-q-media-type').value = q.mediaType || "none";
+            document.getElementById('edit-q-media-url').value = q.mediaUrl || "";
+            document.getElementById('edit-q-explanation').value = q.explanation || "";
+
+            const isBool = q.type === "boolean";
+            document.getElementById('edit-opt-box-2').style.display = isBool ? "none" : "flex";
+            document.getElementById('edit-opt-box-3').style.display = isBool ? "none" : "flex";
+
+            for (let i = 0; i < 4; i++) {
+                const optInput = document.getElementById(`edit-opt-${i}`);
+                const radioInput = document.getElementById(`edit-correct-${i}`);
+                if (optInput) optInput.value = q.options[i] !== undefined ? q.options[i] : "";
+                if (radioInput) radioInput.checked = (q.correctIndex === i);
+            }
+        }
+
+        function changeQuestionType() {
+            const activeQuiz = getActiveQuiz();
+            const q = activeQuiz?.questions[selectedEditorQuestionIndex];
+            if (!q) return;
+
+            const newType = document.getElementById('edit-q-type').value;
+            q.type = newType;
+            if (newType === "boolean") {
+                q.options = ["ถูก (True)", "ผิด (False)"];
+                if (q.correctIndex > 1) q.correctIndex = 0;
+            } else {
+                q.options = [
+                    q.options[0] || "ตัวเลือกที่ 1",
+                    q.options[1] || "ตัวเลือกที่ 2",
+                    "ตัวเลือกที่ 3",
+                    "ตัวเลือกที่ 4"
+                ];
+            }
+            persistQuizzes();
+            loadQuestionIntoEditor(selectedEditorQuestionIndex);
+        }
+
+        function saveCurrentQuestionEdits() {
+            const activeQuiz = getActiveQuiz();
+            const q = activeQuiz?.questions[selectedEditorQuestionIndex];
+            if (!q) return;
+
+            q.timeLimit = Number(document.getElementById('edit-q-time').value) || 20;
+            q.points = Math.max(1, Number(document.getElementById('edit-q-points').value) || 10);
+            q.text = document.getElementById('edit-q-text').value;
+            q.mediaType = document.getElementById('edit-q-media-type').value;
+            q.mediaUrl = document.getElementById('edit-q-media-url').value.trim();
+            q.explanation = document.getElementById('edit-q-explanation').value;
+
+            const maxOpts = q.type === "boolean" ? 2 : 4;
+            const newOpts = [];
+            for (let i = 0; i < maxOpts; i++) {
+                newOpts.push(document.getElementById(`edit-opt-${i}`).value);
+                if (document.getElementById(`edit-correct-${i}`).checked) {
+                    q.correctIndex = i;
+                }
+            }
+            q.options = newOpts;
+            persistQuizzes();
+            renderQuestionListSidebar();
+        }
+
+        function addNewQuestion() {
+            const activeQuiz = getActiveQuiz();
+            if (!activeQuiz) return;
+            activeQuiz.questions.push({
+                id: "q-" + Date.now(),
+                type: "multiple",
+                text: "คำถามข้อใหม่...",
+                timeLimit: 20,
+                points: 10,
+                mediaType: "none",
+                mediaUrl: "",
+                options: ["ตัวเลือกที่ 1", "ตัวเลือกที่ 2", "ตัวเลือกที่ 3", "ตัวเลือกที่ 4"],
+                correctIndex: 0,
+                explanation: ""
+            });
+            selectedEditorQuestionIndex = activeQuiz.questions.length - 1;
+            persistQuizzes();
+            refreshCreatorStudio();
+            showToast("เพิ่มคำถามข้อใหม่แล้ว", "success");
+        }
+
+        function deleteCurrentQuestion() {
+            const activeQuiz = getActiveQuiz();
+            if (!activeQuiz) return;
+            if (activeQuiz.questions.length <= 1) {
+                showToast("ต้องมีคำถามอย่างน้อย 1 ข้อในแบบทดสอบ", "warning");
+                return;
+            }
+            activeQuiz.questions.splice(selectedEditorQuestionIndex, 1);
+            selectedEditorQuestionIndex = Math.max(0, selectedEditorQuestionIndex - 1);
+            persistQuizzes();
+            refreshCreatorStudio();
+            showToast("ลบคำถามเรียบร้อยแล้ว", "info");
+        }
+
+        function exportQuizJSON() {
+            const activeQuiz = getActiveQuiz();
+            if (!activeQuiz) return;
+            const blob = new Blob([JSON.stringify(activeQuiz, null, 2)], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${activeQuiz.id || 'ghps_quiz'}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast("ส่งออกไฟล์ชุดข้อสอบ (.json) เรียบร้อยแล้ว", "success");
+        }
+
+        function importQuizJSON(event) {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const parsed = JSON.parse(e.target.result);
+                    if (Array.isArray(parsed)) {
+                        quizSets = parsed;
+                        activeQuizId = quizSets[0].id;
+                    } else if (parsed && Array.isArray(parsed.questions)) {
+                        parsed.id = "quiz-import-" + Date.now();
+                        quizSets.push(parsed);
+                        activeQuizId = parsed.id;
+                    } else {
+                        throw new Error("Invalid format");
+                    }
+                    persistQuizzes();
+                    persistActiveQuizId();
+                    refreshCreatorStudio();
+                    showToast("นำเข้าชุดข้อสอบเรียบร้อยแล้ว!", "success");
+                } catch (err) {
+                    showToast("ไฟล์ JSON ไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง", "error");
+                }
+            };
+            reader.readAsText(file);
+            event.target.value = "";
+        }
+
+        // ==========================================
+        // 10. INSTRUCTOR SCORE MANAGER TABLE
+        // ==========================================
+        function populateCreatorScoreFilter() {
+            const select = document.getElementById('creator-score-filter');
+            if (!select) return;
+            const currentVal = select.value;
+            const titles = Array.from(new Set(leaderboardData.map(item => item.quizTitle).filter(Boolean)));
+            select.innerHTML = `<option value="ALL">ทุกชุดแบบทดสอบ (${leaderboardData.length})</option>` +
+                titles.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+            if (titles.includes(currentVal)) select.value = currentVal;
+        }
+
+        function renderCreatorScoresTable() {
+            const tbody = document.getElementById('creator-scores-tbody');
+            const filterSelect = document.getElementById('creator-score-filter');
+            if (!tbody) return;
+
+            const selectedTitle = filterSelect ? filterSelect.value : "ALL";
+            let filtered = leaderboardData.slice();
+            if (selectedTitle && selectedTitle !== "ALL") {
+                filtered = filtered.filter(r => r.quizTitle === selectedTitle);
+            }
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-sm text-gray-400">ยังไม่มีรายการผลคะแนน</td></tr>`;
+                updateSelectedScoresToolbar();
+                return;
+            }
+
+            tbody.innerHTML = filtered.map(row => {
+                const origIdx = leaderboardData.indexOf(row);
+                return `
+                    <tr class="border-b border-gray-100 hover:bg-purple-50/40 text-sm transition">
+                        <td class="py-2.5 px-3 text-center">
+                            <input type="checkbox" data-orig-idx="${origIdx}" onchange="updateSelectedScoresToolbar()" class="creator-score-checkbox w-4 h-4 accent-purple-700 rounded cursor-pointer">
+                        </td>
+                        <td class="py-2.5 px-3 font-bold text-gray-900">${escapeHtml(row.name)}</td>
+                        <td class="py-2.5 px-3 text-gray-600">${escapeHtml(row.department)}</td>
+                        <td class="py-2.5 px-3 text-xs text-gray-600">${escapeHtml(row.quizTitle)}</td>
+                        <td class="py-2.5 px-3 text-center font-semibold">${row.correct}/${row.total}</td>
+                        <td class="py-2.5 px-3 text-right font-extrabold text-purple-700">${row.score}</td>
+                        <td class="py-2.5 px-3 text-right">
+                            <button type="button" onclick="deleteScoreRecord(${origIdx})" class="px-2.5 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold transition">
+                                <i class="fa-solid fa-trash mr-1"></i> ลบ
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            updateSelectedScoresToolbar();
+        }
+
+        // ==========================================
+        // 11. APPLICATION INITIALIZATION
+        // ==========================================
+        window.onload = function() {
+            parseUrlParameters();
+            refreshHomeView();
+            fetchQuizFromGoogleSheets(false);
+            fetchScoresFromGoogleSheets(false);
+        };
+    </script>
+</body>
+</html>
